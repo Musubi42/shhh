@@ -30,6 +30,54 @@ func TestIsSensitive(t *testing.T) {
 	}
 }
 
+func TestScanEnvCrossReference(t *testing.T) {
+	// An internal custom token that no pattern rule would match but that
+	// passes the CheckEnvValue strength gate.
+	token := "Mk9zPwXr7AqN4bVtC2yL"
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(
+		"INTERNAL_TOKEN="+token+"\nHOST=localhost\n",
+	), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The same value appears hardcoded in a source file — this is what the
+	// cross-reference should catch.
+	if err := os.WriteFile(filepath.Join(dir, "config.js"), []byte(
+		"const token = '"+token+"';\nmodule.exports = { token };\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := New(detector.New())
+	results, err := s.Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Expect config.js to show up with a cross-reference finding.
+	var configJSResult *FileResult
+	for i := range results {
+		if filepath.Base(results[i].Path) == "config.js" {
+			configJSResult = &results[i]
+			break
+		}
+	}
+	if configJSResult == nil {
+		t.Fatalf("config.js not flagged by cross-reference; results=%+v", results)
+	}
+	found := false
+	for _, f := range configJSResult.Findings {
+		if f.Rule == "env-crossref" && f.Value == token {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("env-crossref finding for %q not in config.js results: %+v", token, configJSResult.Findings)
+	}
+}
+
 func TestScanFixture(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(
