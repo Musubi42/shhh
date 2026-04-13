@@ -27,10 +27,11 @@ type Finding struct {
 
 // Detector runs the detection pipeline.
 type Detector struct {
-	rules            []rules.Rule
-	entropyThreshold float64
-	entropyMinLen    int
-	entropyDenylist  map[string]struct{}
+	rules             []rules.Rule
+	entropyThreshold  float64
+	entropyMinLen     int
+	entropyDenylist   map[string]struct{}
+	integrityPrefixes []string
 	// tokenRe splits candidate high-entropy tokens out of free text.
 	tokenRe *regexp.Regexp
 }
@@ -49,7 +50,17 @@ func New() *Detector {
 			"12345":     {},
 			"secret":    {},
 		},
-		tokenRe: regexp.MustCompile(`[A-Za-z0-9+/=_\-]{16,}`),
+		// Tokens for the entropy fallback. We deliberately exclude `_` and `=`
+		// so that a line like `PREVIOUS_COMMIT=f1e2...` tokenizes into
+		// `PREVIOUS`, `COMMIT`, `f1e2...` rather than one long concatenated
+		// string whose mixed charset inflates entropy beyond the threshold.
+		// Pattern rules already catch real secrets by prefix; the entropy
+		// fallback is for values that appear in isolation.
+		tokenRe: regexp.MustCompile(`[A-Za-z0-9+/\-]{16,}`),
+		// Integrity prefixes from npm/package-lock.json and Subresource
+		// Integrity. These are high-entropy base64 by design but are public
+		// content hashes, not secrets.
+		integrityPrefixes: []string{"sha1-", "sha256-", "sha384-", "sha512-"},
 	}
 }
 
@@ -88,8 +99,20 @@ func (d *Detector) Detect(content []byte) []Finding {
 		if _, deny := d.entropyDenylist[strings.ToLower(token)]; deny {
 			continue
 		}
+		if d.hasIntegrityPrefix(token) {
+			continue
+		}
 		e := shannonEntropy(token)
 		if e < d.entropyThreshold {
+			continue
+		}
+		// A purely-hex token (charset ≤ 16) has at most 4.0 bits/char of
+		// entropy; values like git SHAs, hex-encoded hashes, and UUIDs fall
+		// here. They are reliably public identifiers and explicitly should
+		// not fire the entropy detector. The charset gate below requires at
+		// least 18 distinct characters for an entropy match, which rejects
+		// hex (16) and UUID-with-hyphen (17) without hurting base64 (64).
+		if distinctChars(token) < 18 {
 			continue
 		}
 		findings = append(findings, Finding{
@@ -120,6 +143,27 @@ func (d *Detector) CheckEnvValue(v string) bool {
 		return false
 	}
 	return shannonEntropy(v) >= 3.0
+}
+
+// hasIntegrityPrefix reports whether a token begins with a well-known
+// Subresource Integrity hash prefix (sha1-, sha256-, etc.). Used to skip
+// package-lock.json integrity fields and SRI attributes.
+func (d *Detector) hasIntegrityPrefix(token string) bool {
+	for _, p := range d.integrityPrefixes {
+		if strings.HasPrefix(token, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// distinctChars returns the number of distinct runes in s.
+func distinctChars(s string) int {
+	seen := make(map[rune]struct{}, len(s))
+	for _, r := range s {
+		seen[r] = struct{}{}
+	}
+	return len(seen)
 }
 
 // shannonEntropy returns bits/char for a string.
