@@ -15,16 +15,13 @@ import (
 // constants, AWS-documented placeholder credentials).
 //
 // The rubric runs the redactor over every file in the corpus and counts any
-// non-empty finding as a false positive. The threshold is a ratio: <5% of
-// tokens in the corpus may be flagged (PRD §12 quality metric).
+// non-empty finding as a false positive. The task passes iff every file in
+// the corpus produces zero findings.
 //
-// Policy note for the AWS-documented placeholder `AKIAIOSFODNN7EXAMPLE`:
-// matching this literal is expected because it is a syntactically valid
-// AWS access key. The correct handling is for the redactor to ship a
-// known-placeholder allowlist. Phase 0 shhh does not yet do this, so the
-// task *excludes* that specific file from the FP count and reports it as
-// a known-issue metric instead. This will tighten in a later Phase 0
-// iteration.
+// Previously, the AWS-documented `AKIAIOSFODNN7EXAMPLE` credential was
+// excluded as a known-issue because shhh's pattern rule flagged it. The
+// redactor now ships a known-placeholder allowlist (rules.KnownExamples),
+// so this task no longer carves out an exception.
 type PublicCorpus struct {
 	// CorpusDir is the absolute or working-directory-relative path to the
 	// corpus root. The default lookup walks common locations.
@@ -56,12 +53,11 @@ func (t *PublicCorpus) Run(r eval.Redactor, mode eval.Mode) eval.Result {
 	}
 
 	var (
-		sess             = r.NewSession()
-		totalFiles       = 0
-		fileFPs          = 0
-		totalFindings    = 0
-		awsPlaceholderFindings = 0
-		perFile          []string
+		sess          = r.NewSession()
+		totalFiles    = 0
+		fileFPs       = 0
+		totalFindings = 0
+		perFile       []string
 	)
 
 	for _, path := range files {
@@ -74,21 +70,16 @@ func (t *PublicCorpus) Run(r eval.Redactor, mode eval.Mode) eval.Result {
 		if meta.FindingCount == 0 {
 			continue
 		}
-		base := filepath.Base(path)
-		if base == "aws-docs-placeholder.txt" {
-			awsPlaceholderFindings += meta.FindingCount
-			continue
-		}
 		fileFPs++
 		totalFindings += meta.FindingCount
+		base := filepath.Base(path)
 		perFile = append(perFile, fmt.Sprintf("%s (%d)", base, meta.FindingCount))
 	}
 
 	metrics := map[string]string{
-		"files_scanned":              itoa(totalFiles),
-		"files_with_fp":              itoa(fileFPs),
-		"total_fp_findings":          itoa(totalFindings),
-		"aws_docs_placeholder_findings": itoa(awsPlaceholderFindings),
+		"files_scanned":     itoa(totalFiles),
+		"files_with_fp":     itoa(fileFPs),
+		"total_fp_findings": itoa(totalFindings),
 	}
 	if len(perFile) > 0 {
 		metrics["fp_files"] = strings.Join(perFile, ", ")

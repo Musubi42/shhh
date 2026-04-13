@@ -92,6 +92,21 @@ func TestDetect_PublicExampleCorpus(t *testing.T) {
 	}
 }
 
+func TestDetect_KnownExamplesAllowlisted(t *testing.T) {
+	d := New()
+	cases := []string{
+		"AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE",
+		"AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+		"STRIPE_TEST=sk_test_4eC39HqLyjWDarjtT1zdp7dc",
+	}
+	for _, s := range cases {
+		fs := d.Detect([]byte(s))
+		if len(fs) > 0 {
+			t.Errorf("known example should be allowlisted: %q -> %+v", s, fs)
+		}
+	}
+}
+
 func TestCheckEnvValue(t *testing.T) {
 	d := New()
 	strong := "s8kdj39dkLmQ2xPvR7"

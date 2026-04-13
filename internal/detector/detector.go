@@ -69,12 +69,18 @@ func (d *Detector) Detect(content []byte) []Finding {
 	text := string(content)
 	var findings []Finding
 
-	// Stage 1: known patterns.
+	// Stage 1: known patterns. Any pattern match whose value is on the
+	// public-placeholder allowlist (e.g., AKIAIOSFODNN7EXAMPLE from AWS
+	// docs) is dropped.
 	for _, r := range d.rules {
 		matches := r.Pattern.FindAllStringIndex(text, -1)
 		for _, m := range matches {
+			value := text[m[0]:m[1]]
+			if rules.IsKnownExample(value) {
+				continue
+			}
 			findings = append(findings, Finding{
-				Value:        text[m[0]:m[1]],
+				Value:        value,
 				Rule:         r.Name,
 				Label:        r.Label,
 				PublicPrefix: r.PublicPrefix,
@@ -100,6 +106,9 @@ func (d *Detector) Detect(content []byte) []Finding {
 			continue
 		}
 		if d.hasIntegrityPrefix(token) {
+			continue
+		}
+		if rules.IsKnownExample(token) {
 			continue
 		}
 		e := shannonEntropy(token)
