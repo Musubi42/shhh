@@ -43,6 +43,12 @@ func (t *PublicCorpus) SupportedModes() []eval.Mode {
 	return []eval.Mode{eval.ModeRedact}
 }
 
+// Expected: the public-example corpus must produce zero findings. A
+// failure is a regression in detector calibration.
+func (t *PublicCorpus) Expected(mode eval.Mode) eval.Expected {
+	return eval.ExpectedPass
+}
+
 func (t *PublicCorpus) Run(r eval.Redactor, mode eval.Mode) eval.Result {
 	files, err := listCorpus(t.CorpusDir)
 	if err != nil {

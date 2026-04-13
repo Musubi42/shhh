@@ -35,6 +35,7 @@ added as the harness matures.
 	adapter := eval.NewShhhAdapter()
 
 	suite := []eval.Task{
+		tasks.NewJWTDecode(),
 		tasks.NewPlaceholderEntropy(),
 		tasks.NewPublicCorpus(),
 	}
@@ -42,10 +43,12 @@ added as the harness matures.
 	cells := eval.Run(adapter, suite)
 	fmt.Println(eval.Matrix(cells, suite))
 
-	// Non-zero exit if any cell failed.
-	for _, c := range cells {
-		if !c.Result.Pass {
-			os.Exit(1)
-		}
+	// Exit non-zero only on regressions (cells designed to pass that
+	// failed). Surprise passes (cells designed to fail that passed) are
+	// reported but do not fail the build — they are a warning that the
+	// task may not be testing what we thought, and need investigation
+	// rather than CI failure.
+	if eval.HasRegressions(cells) {
+		os.Exit(1)
 	}
 }

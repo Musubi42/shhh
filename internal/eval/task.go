@@ -41,6 +41,33 @@ const (
 	Tier3 Tier = 3
 )
 
+// Expected declares what outcome a task is *designed* to produce in a given
+// mode. Some tasks are Tier-1 demonstrations of "pure redaction breaks
+// reasoning" — they are *designed* to fail in `redact` mode and pass in
+// `redact+compensatory`. Treating both as "failures" would make the
+// matrix meaningless; we need to distinguish "the design held" from "a
+// regression happened."
+type Expected int
+
+const (
+	// ExpectedPass means the task should pass in this mode. A failure is a
+	// real regression.
+	ExpectedPass Expected = iota
+
+	// ExpectedFail means the task is designed to fail in this mode. A pass
+	// is surprising and means either the task is not testing what we
+	// thought, or the product became unexpectedly good — either outcome
+	// deserves investigation.
+	ExpectedFail
+)
+
+func (e Expected) String() string {
+	if e == ExpectedPass {
+		return "pass"
+	}
+	return "fail"
+}
+
 // Task is one benchmark task. Implementations live in internal/eval/tasks.
 type Task interface {
 	// ID is a short stable identifier (e.g. "t07-placeholder-entropy").
@@ -55,6 +82,11 @@ type Task interface {
 	// SupportedModes lists the modes this task runs in. Tasks that are mode-
 	// agnostic (direct measurements) return a single element.
 	SupportedModes() []Mode
+
+	// Expected returns what outcome the task is designed to produce in the
+	// given mode. Used by the runner to distinguish expected failures
+	// (design-validated) from unexpected failures (regressions).
+	Expected(mode Mode) Expected
 
 	// Run executes the task in the given mode against the given redactor.
 	// The returned Result reports pass/fail and optional metrics.

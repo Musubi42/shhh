@@ -42,6 +42,12 @@ func (t *PlaceholderEntropy) SupportedModes() []eval.Mode {
 	return []eval.Mode{eval.ModeRedact}
 }
 
+// Expected: the redactor is supposed to produce collision-free, leak-free
+// placeholders. A failure here is a regression in the session map.
+func (t *PlaceholderEntropy) Expected(mode eval.Mode) eval.Expected {
+	return eval.ExpectedPass
+}
+
 func (t *PlaceholderEntropy) Run(r eval.Redactor, mode eval.Mode) eval.Result {
 	// Generate N distinct real values. We use a well-formed Stripe live key
 	// shape so that shhh's pattern rule will fire and produce a labeled

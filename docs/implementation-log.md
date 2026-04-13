@@ -17,6 +17,135 @@ the roadmap, we log the reorder as its own entry.
 
 ---
 
+## Entry 6 — Task 1 JWT decode, compensatory tools bundle, Expected-by-mode (roadmap steps 6+7+8, partly 10)
+
+**Goal:** land the first compensatory tool (`decode_jwt_safely`), the
+first Tier-1 agent-dependent task (JWT decode), and whatever harness
+primitives the task needs to run end-to-end in all four modes.
+
+**Built:**
+- `internal/eval/jwt.go` — `BuildJWT(claims)` and `DecodeJWTPayload(jwt)`
+  with a `JWTClaims` struct (sub, iss, aud, exp, iat, scopes). Signature
+  verification is intentionally absent: the point of the compensatory
+  tool is claims inspection, not authentication.
+- `internal/eval/jwt_test.go` — round-trip and malformed-input tests.
+- `internal/eval/compensatory.go` — `CompensatoryTools` bundle bound to
+  a `Redactor` + `SessionID`. Exposes `DecodeJWTSafely(placeholder)` and
+  `CompareSecrets(a, b)`. Both fail closed on unknown placeholders.
+- `internal/eval/tasks/t01_jwt_decode.go` — task 1 implementation. It
+  constructs a fixture JWT at runtime (deterministic claims), redacts
+  the `.env` content per mode, simulates agent extraction via
+  `extractEnvValue`, tries direct JWT decoding, and falls back to
+  `DecodeJWTSafely` in compensatory mode. A rubric helper checks that
+  returned claims match the expected sub/exp/scopes.
+- `internal/eval/task.go` — new `Expected` type and `Task.Expected(mode)
+  Expected` method. Three possible cell outcomes now: design-held,
+  regression, surprise pass.
+- `internal/eval/runner.go` — `Cell.Matches()`, `Cell.IsRegression()`,
+  `Cell.IsSurprisePass()`, `HasRegressions([]Cell)`. `Matrix()` renders
+  with four glyphs: `✅ pass`, `✅ fail-ok`, `❌ regression`, `⚠️ surprise`.
+  Mismatches section replaces the old failures section.
+- `cmd/shhh-eval/main.go` — exit code 1 only on regressions. Surprise
+  passes are surfaced in the matrix but do not fail CI.
+- All pre-existing tasks (t07, t08) gain `Expected()` methods returning
+  `ExpectedPass` for their single supported mode.
+
+**Learned:**
+
+1. **The "mock agent harness" from roadmap step 6 was a mirage.** I
+   expected to build a reusable mock-agent abstraction. When I wrote
+   task 1 the right shape turned out to be: each task encodes its own
+   simulated-agent logic directly in `Run`, and the only shared
+   abstraction is the `CompensatoryTools` bundle (which is not an agent
+   at all — it is the MCP tool surface). The "agent" in a Phase-0 task
+   is just Go code that mimics what a reasoning agent would do:
+   extract a value, try to decode, fall back to compensatory tools.
+   When a real Claude Code runner lands in step 16, the task will
+   either swap its `Run` body to drive the runner, or we will factor
+   the shared prompt/rubric shape out then — after seeing the real
+   thing. Roadmap step 6 is re-scoped to "shared primitives for
+   task-internal agent simulation" and mostly consists of
+   `CompensatoryTools`.
+
+2. **Task 1 failing in `redact` and `redact+rehydrate` mode is the
+   design, not a bug.** I ran the eval and saw exit 1 with four cells
+   of red. First instinct: "the runner treats failures as failures."
+   Correct reading: the runner was missing a concept. Some tasks are
+   *supposed* to fail in some modes because the mode is deliberately
+   weaker than what the task needs. Treating every failure as a
+   regression erases the whole point of a Tier-1 task, which is to
+   demonstrate what pure redaction cannot do. Adding `Expected(mode)`
+   made the matrix narrate the story: baseline passes, redact fails
+   as designed, redact+rehydrate fails as designed (because rehydration
+   only touches `tool_use` args, not the content the model reasons
+   about), compensatory mode passes via the tool. That is the intended
+   story and the matrix now tells it in one screen.
+
+3. **The rehydration fail in `redact+rehydrate` on task 1 validates
+   the critique prediction literally.** The original critique said:
+   *"rehydration in tool_use args doesn't help when the agent is
+   reasoning about the value in the model context — the value is
+   inside an opaque base64 blob."* Task 1 now empirically confirms
+   this. When Phase 3 ships the real proxy and runs task 1 against
+   real Claude Code, we expect the same result: rehydration changes
+   nothing for a claims-inspection task because there is no tool call
+   to rehydrate. The compensatory tool is the *only* fix, and that is
+   why compensatory tools are a first-class product surface in the
+   PRD, not an afterthought.
+
+4. **`CompareSecrets` is trivial on top of `ResolvePlaceholder`** — two
+   lookups and an equality check. This is a hint that most compensatory
+   tools will be thin, because the session map already carries the
+   necessary structure. The compensatory surface is valuable less as
+   novel logic and more as a discoverable API: the agent needs to know
+   the tool exists, even if its implementation is three lines.
+
+5. **`ResolvePlaceholder` via rehydration-of-a-single-string is a
+   kludge.** `ShhhAdapter.ResolvePlaceholder` calls `r.Rehydrate([]byte(placeholder))`
+   and compares input to output to detect "was substituted." This
+   works because the placeholder regex matches the full string, so
+   rehydrate can replace it. But it is obviously the wrong primitive
+   for a production lookup — it pays a regex walk to do what should be
+   a single map fetch. When the daemon's session map gets a direct
+   lookup method (Phase 3), the adapter rewrites to use it. Logged as
+   a Phase-0 tech debt item.
+
+**Decisions forced:**
+
+- **Eval exit code distinguishes regressions from surprise passes.**
+  Only regressions fail `make bench`. Surprise passes are warnings the
+  matrix prints but do not fail CI. Rationale: a surprise pass might
+  mean the product quietly became better (great!) or it might mean the
+  task stopped testing what we thought (also important!) — neither
+  outcome deserves a red build until a human looks at the mismatch.
+  This is encoded in `HasRegressions()` which is what `cmd/shhh-eval`
+  checks before exiting.
+- **`Expected(mode)` is per-task-per-mode, not a global policy.** I
+  considered a simpler "all cells expected to pass" policy with an
+  annotation like `ExpectedFailModes`. Per-mode method is more
+  uniform: every task answers "what do you expect in this mode?" and
+  no task has to opt into a non-default behavior.
+- **Fixture content for task 1 is built in Go, not stored on disk.**
+  The JWT is generated at runtime from a fixed payload map. Keeps the
+  task self-contained and makes the "this is what we assert"
+  relationship explicit in the task source. Tasks that need a file
+  tree (task 4, 5) will use on-disk fixtures; the two patterns
+  coexist.
+- **Task simulation lives inside `Run`, not in a separate
+  `AgentAdapter`.** When we wire a real agent runner (roadmap 16), we
+  will either refactor `Run` to delegate to the runner or extract a
+  thin protocol — the exact shape will depend on what the runner
+  needs. Not worth guessing now.
+
+**Next:** the natural next step is roadmap step 9 (task 3: consistency
+across files) which exercises `CompareSecrets` as its compensatory
+tool. That task will reveal whether base64 normalization needs to
+happen at detection time or at comparison time, and whether the
+session map's content-hash approach suffices or needs a canonical
+form.
+
+---
+
 ## Entry 5 — Makefile reproducibility contract (roadmap step 4)
 
 **Commit:** `38f833d`
