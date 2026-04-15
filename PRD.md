@@ -9,6 +9,14 @@
 **Date:** 2026-04-13
 **Status:** Pre-development — Architecture & Scope Definition
 
+> **Reader: §§1–9 describe the product and are current.** §10
+> (Development Phases) is **superseded** — see the banner at the
+> start of that section, `docs/implementation-roadmap.md` for the
+> post-pivot milestone list, and `docs/postmortem-eval-overbuild.md`
+> for why the prior roadmap was scrapped. `CLAUDE.md` at the repo
+> root has the operating instructions every session should load
+> before touching code.
+
 ---
 
 ## Table of Contents
@@ -1134,7 +1142,22 @@ The `<details open>` tag determines which tool is "featured" by default. This sh
 
 ## 10. Development Phases
 
-> **Timeline note.** The original PRD compressed Phase 1 to 2 weeks. Realistic solo-developer timelines are 2–3× that. Every phase below budgets for the esbuild-style cross-platform npm distribution (non-trivial), for CI, and for the documentation and eval work that make the product credible. Each phase document in `docs/` contains the full deliverable checklist, ship criterion, explicit out-of-scope list, and risk notes — the summary here is the index.
+> **⚠️ Superseded as of 2026-04-13.** This section describes the
+> original "Phase 0 through Phase 6" roadmap that was in force until
+> step 16 (Docker Claude Code runner) exposed a scoping error: the
+> roadmap was building a validation harness for a product that did
+> not yet exist. The post-pivot roadmap lives in
+> `docs/implementation-roadmap.md` (short milestone list, hook-first).
+> The diagnosis is in `docs/postmortem-eval-overbuild.md`.
+>
+> Read this section for historical context only. Do not use it to
+> drive forward work, and in particular do not treat Phase 0's
+> "eval suite first" framing as a current requirement. Principle 7
+> ("Eval-driven, not architecture-driven") means *validate claims
+> with measurements before shipping them*, not *build the eval
+> before the product*. The difference matters.
+
+> **Timeline note (original text, retained):** The original PRD compressed Phase 1 to 2 weeks. Realistic solo-developer timelines are 2–3× that. Every phase below budgets for the esbuild-style cross-platform npm distribution (non-trivial), for CI, and for the documentation and eval work that make the product credible. Each phase document in `docs/` contains the full deliverable checklist, ship criterion, explicit out-of-scope list, and risk notes — the summary here is the index.
 
 ### Phase 0 — Eval Suite & Minimal Redactor (4 weeks, private)
 

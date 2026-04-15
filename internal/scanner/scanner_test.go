@@ -78,11 +78,66 @@ func TestScanEnvCrossReference(t *testing.T) {
 	}
 }
 
+func TestScanEnvCrossReference_MultipleOccurrences(t *testing.T) {
+	// A hardcoded .env value is copy-pasted into the source file twice.
+	// The cross-reference pass must report both occurrences, not just the
+	// first — the whole point of the feature is to surface every hardcoded
+	// copy so the user can delete all of them.
+	token := "Mk9zPwXr7AqN4bVtC2yL"
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(
+		"INTERNAL_TOKEN="+token+"\n",
+	), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.js"), []byte(
+		"const tokenA = '"+token+"';\nconst tokenB = '"+token+"';\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := New(detector.New())
+	results, err := s.Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var configJSResult *FileResult
+	for i := range results {
+		if filepath.Base(results[i].Path) == "config.js" {
+			configJSResult = &results[i]
+			break
+		}
+	}
+	if configJSResult == nil {
+		t.Fatalf("config.js not flagged; results=%+v", results)
+	}
+	hits := 0
+	for _, f := range configJSResult.Findings {
+		if f.Rule == "env-crossref" && f.Value == token {
+			hits++
+		}
+	}
+	if hits != 2 {
+		t.Errorf("expected 2 cross-ref hits for %q in config.js, got %d (findings: %+v)", token, hits, configJSResult.Findings)
+	}
+	// And they must be reported in file order.
+	prev := -1
+	for _, f := range configJSResult.Findings {
+		if f.Start < prev {
+			t.Errorf("findings not sorted by offset: %+v", configJSResult.Findings)
+			break
+		}
+		prev = f.Start
+	}
+}
+
 func TestScanFixture(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(
 		"STRIPE_KEY=sk_live_4eC39HqLyjWDarjtT1zdp7dcfakeKeyForTesting\n"+
-			"AWS_KEY=AKIA3EXAMPLE7XYZABC1\n"+
+			"AWS_KEY=AKIA3EXAMPLE7XYZABC4\n"+
 			"HOST=localhost\n",
 	), 0o600); err != nil {
 		t.Fatal(err)

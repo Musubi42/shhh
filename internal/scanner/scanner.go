@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/musubi-sasu/shhh/internal/detector"
@@ -133,34 +134,55 @@ func (s *Scanner) Scan(root string) ([]FileResult, error) {
 		// findings when a pattern rule already matched.
 		_, isEnvSource := envFiles[path]
 		text := string(content)
-		for value := range crossRef {
-			idx := strings.Index(text, value)
-			if idx < 0 {
-				continue
-			}
-			if spanAlreadyCovered(findings, idx, idx+len(value)) {
-				continue
-			}
+		// Iterate cross-ref values in sorted order so the appended findings
+		// are deterministic across runs (map iteration is randomized).
+		sortedValues := make([]string, 0, len(crossRef))
+		for v := range crossRef {
+			sortedValues = append(sortedValues, v)
+		}
+		sort.Strings(sortedValues)
+		for _, value := range sortedValues {
 			description := "Value from a .env file — possible hardcoded credential"
 			label := "ENV_CROSSREF"
 			if isEnvSource {
 				description = "Custom secret (passed strength gate)"
 				label = "ENV_CUSTOM_SECRET"
 			}
-			findings = append(findings, detector.Finding{
-				Value:        value,
-				Rule:         "env-crossref",
-				Label:        label,
-				PublicPrefix: "",
-				Description:  description,
-				Start:        idx,
-				End:          idx + len(value),
-			})
+			// Report every occurrence in the file, not just the first one.
+			// A hardcoded copy-pasted value is the whole point of the
+			// cross-reference pass; missing the 2nd and 3rd instance in a
+			// file would defeat the feature.
+			from := 0
+			for from < len(text) {
+				rel := strings.Index(text[from:], value)
+				if rel < 0 {
+					break
+				}
+				idx := from + rel
+				from = idx + len(value)
+				if spanAlreadyCovered(findings, idx, idx+len(value)) {
+					continue
+				}
+				findings = append(findings, detector.Finding{
+					Value:        value,
+					Rule:         "env-crossref",
+					Label:        label,
+					PublicPrefix: "",
+					Description:  description,
+					Start:        idx,
+					End:          idx + len(value),
+				})
+			}
 		}
 
 		if len(findings) == 0 {
 			return nil
 		}
+		// Re-sort so findings are reported in file order regardless of which
+		// pass produced them.
+		sort.Slice(findings, func(i, j int) bool {
+			return findings[i].Start < findings[j].Start
+		})
 		out = append(out, FileResult{Path: path, Findings: findings})
 		return nil
 	})

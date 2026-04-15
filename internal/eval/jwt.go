@@ -12,13 +12,53 @@ import (
 // tool would return. The signature is never included: the whole point of
 // the tool is that the agent learns the claims without ever seeing (and
 // therefore being able to forge or leak) the token value.
+//
+// Audience is always decoded as a slice because RFC 7519 §4.1.3 allows
+// `aud` to be either a single string or an array of strings, and real
+// IdPs (Google, Auth0, Okta) ship array audiences for multi-resource
+// tokens. UnmarshalJSON normalizes both shapes into []string.
 type JWTClaims struct {
-	Subject string   `json:"sub"`
-	Issuer  string   `json:"iss"`
-	Audience string  `json:"aud"`
-	Expiry  int64    `json:"exp"`
-	IssuedAt int64   `json:"iat"`
-	Scopes  []string `json:"scopes"`
+	Subject  string   `json:"sub"`
+	Issuer   string   `json:"iss"`
+	Audience []string `json:"aud"`
+	Expiry   int64    `json:"exp"`
+	IssuedAt int64    `json:"iat"`
+	Scopes   []string `json:"scopes"`
+}
+
+// UnmarshalJSON decodes a JWT payload and normalizes `aud` to []string
+// regardless of whether the payload encodes it as a string or an array.
+func (c *JWTClaims) UnmarshalJSON(data []byte) error {
+	type rawClaims struct {
+		Subject  string          `json:"sub"`
+		Issuer   string          `json:"iss"`
+		Audience json.RawMessage `json:"aud"`
+		Expiry   int64           `json:"exp"`
+		IssuedAt int64           `json:"iat"`
+		Scopes   []string        `json:"scopes"`
+	}
+	var raw rawClaims
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	c.Subject = raw.Subject
+	c.Issuer = raw.Issuer
+	c.Expiry = raw.Expiry
+	c.IssuedAt = raw.IssuedAt
+	c.Scopes = raw.Scopes
+	if len(raw.Audience) > 0 {
+		var arr []string
+		if err := json.Unmarshal(raw.Audience, &arr); err == nil {
+			c.Audience = arr
+		} else {
+			var single string
+			if err := json.Unmarshal(raw.Audience, &single); err != nil {
+				return fmt.Errorf("aud must be string or []string: %w", err)
+			}
+			c.Audience = []string{single}
+		}
+	}
+	return nil
 }
 
 // DecodeJWTPayload parses a JWT string (three base64url parts separated by

@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/musubi-sasu/shhh/internal/eval"
@@ -83,16 +84,18 @@ func (t *PublicCorpus) Run(r eval.Redactor, mode eval.Mode) eval.Result {
 	}
 
 	metrics := map[string]string{
-		"files_scanned":     itoa(totalFiles),
-		"files_with_fp":     itoa(fileFPs),
-		"total_fp_findings": itoa(totalFindings),
+		"files_scanned":     strconv.Itoa(totalFiles),
+		"files_with_fp":     strconv.Itoa(fileFPs),
+		"total_fp_findings": strconv.Itoa(totalFindings),
 	}
 	if len(perFile) > 0 {
 		metrics["fp_files"] = strings.Join(perFile, ", ")
 	}
 
-	// Pass criterion: zero false positives on the excluded-AWS-placeholder
-	// subset. The AWS case is reported but not counted as a failure yet.
+	// Pass criterion: zero false positives across the whole corpus. The
+	// AWS-documented credentials now drop via rules.KnownExamples rather
+	// than being carved out of this task, so every file must produce zero
+	// findings (see implementation-log entry 3).
 	if fileFPs > 0 {
 		return eval.FailResult(
 			fmt.Sprintf("%d files produced %d false positive(s): %s",

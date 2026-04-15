@@ -9,7 +9,7 @@ BIN_DIR   := bin
 SHHH      := $(BIN_DIR)/shhh
 SHHH_EVAL := $(BIN_DIR)/shhh-eval
 
-.PHONY: all build test vet bench scan fixture-scan clean help
+.PHONY: all build test vet bench scan fixture-scan clean help demo
 
 all: build test
 
@@ -42,6 +42,9 @@ scan: build ## scan the current directory
 
 fixture-scan: build ## scan the leaky-project fixture (screenshot-safe)
 	$(SHHH) scan testdata/fixtures/leaky-project
+
+demo: build ## end-to-end hook smoke test (simulates PreToolUse/Read)
+	@./scripts/demo.sh
 
 clean:
 	rm -rf $(BIN_DIR)

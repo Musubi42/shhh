@@ -52,7 +52,11 @@ func New() *Map {
 // publicPrefix is the part of the value that is public information about the
 // service (e.g. "sk_live_"). It is preserved in the placeholder for context;
 // it never leaks bits of the actual secret beyond the public prefix.
-func (m *Map) PlaceholderFor(value, label, publicPrefix string) string {
+// structuralDesc, if non-empty, overrides publicPrefix rendering with a full
+// structural description (e.g. "admin@prod-db:5432/myapp" for a postgres URL),
+// which is how PRD §5 "preserve structure, strip credentials and query string"
+// is implemented for connection-string rules.
+func (m *Map) PlaceholderFor(value, label, publicPrefix, structuralDesc string) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -70,9 +74,12 @@ func (m *Map) PlaceholderFor(value, label, publicPrefix string) string {
 	suffix := hex.EncodeToString(h.Sum(nil))[:8]
 
 	var placeholder string
-	if publicPrefix == "" {
+	switch {
+	case structuralDesc != "":
+		placeholder = fmt.Sprintf("[%s:%s:%s]", label, structuralDesc, suffix)
+	case publicPrefix == "":
 		placeholder = fmt.Sprintf("[%s:%s]", label, suffix)
-	} else {
+	default:
 		placeholder = fmt.Sprintf("[%s:%s...:%s]", label, publicPrefix, suffix)
 	}
 
@@ -110,3 +117,52 @@ func (m *Map) Size() int {
 // PlaceholderRe matches any shhh placeholder in text. Used by the rehydration
 // path in the redactor package.
 var PlaceholderRe = regexp.MustCompile(`\[[A-Z_]+(?::[^\]]*)?\]`)
+
+// Entry is one placeholder <-> value pair in a serialized snapshot.
+type Entry struct {
+	Placeholder string `json:"placeholder"`
+	Value       string `json:"value"`
+}
+
+// Snapshot returns the salt (hex) and all mapped entries. Used by the hook
+// sessionstore to persist per-session state across hook invocations — each
+// hook firing is its own process, so determinism across firings requires
+// persisting both the salt (so PlaceholderFor is stable for new values) and
+// the entries (so Resolve works on values seen by an earlier firing).
+func (m *Map) Snapshot() (saltHex string, entries []Entry) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	saltHex = hex.EncodeToString(m.salt)
+	entries = make([]Entry, 0, len(m.byPlace))
+	for p, v := range m.byPlace {
+		entries = append(entries, Entry{Placeholder: p, Value: v})
+	}
+	return saltHex, entries
+}
+
+// FromSnapshot reconstructs a Map from a previously produced Snapshot. An
+// empty saltHex is treated as an error (callers should use New() in that
+// case). Unknown-shaped entries are skipped silently so an older on-disk
+// store never blocks a newer binary.
+func FromSnapshot(saltHex string, entries []Entry) (*Map, error) {
+	salt, err := hex.DecodeString(saltHex)
+	if err != nil {
+		return nil, fmt.Errorf("shhh/session: bad salt: %w", err)
+	}
+	if len(salt) == 0 {
+		return nil, fmt.Errorf("shhh/session: empty salt")
+	}
+	m := &Map{
+		salt:    salt,
+		byValue: make(map[string]string, len(entries)),
+		byPlace: make(map[string]string, len(entries)),
+	}
+	for _, e := range entries {
+		if e.Placeholder == "" || e.Value == "" {
+			continue
+		}
+		m.byValue[e.Value] = e.Placeholder
+		m.byPlace[e.Placeholder] = e.Value
+	}
+	return m, nil
+}

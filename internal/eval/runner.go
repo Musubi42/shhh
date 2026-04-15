@@ -15,28 +15,23 @@ type Cell struct {
 	Took     time.Duration
 }
 
-// Matches reports whether the actual result agrees with the task's design.
-// A cell "matches" iff actual-pass aligns with expected-pass, or
-// actual-fail aligns with expected-fail. Mismatches are either regressions
-// (designed-pass → fail) or surprise-passes (designed-fail → pass); both
-// deserve attention.
-func (c Cell) Matches() bool {
-	if c.Expected == ExpectedPass {
-		return c.Result.Pass
-	}
-	return !c.Result.Pass
-}
+// A cell is one of three outcomes relative to its expected value:
+//
+//   - matches design: (expected=pass, actual=pass) or (expected=fail, actual=fail)
+//   - regression:     (expected=pass, actual=fail) — fails CI
+//   - surprise pass:  (expected=fail, actual=pass) — warns, does not fail CI
+//
+// Regressions and surprise passes are the only two ways a cell can
+// disagree with its design, so "mismatch" is exactly their disjunction.
 
-// IsRegression reports whether a mismatch is a regression (designed to
-// pass, actually failed). Regressions fail CI; surprise-passes warn but do
-// not fail.
+// IsRegression reports whether a cell is a regression (designed to pass,
+// actually failed). Regressions fail CI.
 func (c Cell) IsRegression() bool {
 	return c.Expected == ExpectedPass && !c.Result.Pass
 }
 
-// IsSurprisePass reports whether a mismatch is an unexpected pass
-// (designed to fail, actually passed). These are warnings that demand
-// investigation but do not fail CI.
+// IsSurprisePass reports whether a cell is an unexpected pass (designed
+// to fail, actually passed). Warnings only; they do not fail CI.
 func (c Cell) IsSurprisePass() bool {
 	return c.Expected == ExpectedFail && c.Result.Pass
 }
@@ -74,18 +69,21 @@ func HasRegressions(cells []Cell) bool {
 
 // Matrix renders cells as a task×mode grid for human reading.
 //
-// Cell glyphs encode four outcomes:
-//   ✅ designed to pass, passed (or designed to fail, failed) — matches design
-//   ❌ designed to pass, failed — regression
-//   ⚠️  designed to fail, passed — surprising, deserves investigation
-//   —  mode not supported by this task
+// Cell labels encode four outcomes:
+//   PASS      designed to pass, passed — matches design
+//   FAIL-OK   designed to fail, failed — matches design (e.g. t01 in redact)
+//   REGRESS   designed to pass, failed — regression, fails CI
+//   SURPRISE  designed to fail, passed — warns, does not fail CI
+//   —         mode not supported by this task
 //
 // The design-match reading is important: a task like t01-jwt-decode is
 // *supposed* to fail in `redact` mode (that is the proof that pure
-// redaction breaks JWT reasoning). Rendering that as a red ❌ would
-// misrepresent the eval. Instead ✅ means "the design held in this cell."
+// redaction breaks JWT reasoning). Rendering that as a red REGRESS would
+// misrepresent the eval. Labels are ASCII rather than emoji so %-N column
+// widths align on byte count the same way they align in a terminal.
 func Matrix(cells []Cell, tasks []Task) string {
 	modes := AllModes()
+	const modeColWidth = 12
 
 	type cellKey struct {
 		task string
@@ -100,15 +98,15 @@ func Matrix(cells []Cell, tasks []Task) string {
 	b.WriteString("\n")
 	b.WriteString("shhh-eval results\n")
 	b.WriteString("=================\n")
-	b.WriteString("legend: ✅ design held    ❌ regression    ⚠️  surprise pass    — unsupported\n\n")
+	b.WriteString("legend: PASS design-held   FAIL-OK designed-fail   REGRESS regression   SURPRISE designed-fail-but-passed   - unsupported\n\n")
 
 	// Header row.
 	b.WriteString(fmt.Sprintf("%-36s", "task"))
 	for _, m := range modes {
-		b.WriteString(fmt.Sprintf(" %-14s", shortMode(m)))
+		b.WriteString(fmt.Sprintf(" %-*s", modeColWidth, shortMode(m)))
 	}
 	b.WriteString("\n")
-	b.WriteString(strings.Repeat("-", 36+15*len(modes)))
+	b.WriteString(strings.Repeat("-", 36+(modeColWidth+1)*len(modes)))
 	b.WriteString("\n")
 
 	// Body rows.
@@ -118,25 +116,23 @@ func Matrix(cells []Cell, tasks []Task) string {
 		supported := modeSet(t.SupportedModes())
 		for _, m := range modes {
 			if _, ok := supported[m]; !ok {
-				b.WriteString(fmt.Sprintf(" %-14s", "—"))
+				b.WriteString(fmt.Sprintf(" %-*s", modeColWidth, "-"))
 				continue
 			}
 			c, has := index[cellKey{t.ID(), m}]
 			switch {
 			case !has:
-				b.WriteString(fmt.Sprintf(" %-14s", "skipped"))
+				b.WriteString(fmt.Sprintf(" %-*s", modeColWidth, "skipped"))
 			case c.IsRegression():
-				b.WriteString(fmt.Sprintf(" %-14s", "❌ regression"))
+				b.WriteString(fmt.Sprintf(" %-*s", modeColWidth, "REGRESS"))
 			case c.IsSurprisePass():
-				b.WriteString(fmt.Sprintf(" %-14s", "⚠️  surprise"))
+				b.WriteString(fmt.Sprintf(" %-*s", modeColWidth, "SURPRISE"))
 			default:
-				// Matches design: either expected-pass+passed or
-				// expected-fail+failed. Both are ✅ to the matrix.
-				label := "✅ pass"
+				cellLabel := "PASS"
 				if c.Expected == ExpectedFail {
-					label = "✅ fail-ok"
+					cellLabel = "FAIL-OK"
 				}
-				b.WriteString(fmt.Sprintf(" %-14s", label))
+				b.WriteString(fmt.Sprintf(" %-*s", modeColWidth, cellLabel))
 			}
 		}
 		b.WriteString("\n")
@@ -145,7 +141,7 @@ func Matrix(cells []Cell, tasks []Task) string {
 	// Detail section for mismatches (regressions and surprise passes).
 	mismatches := false
 	for _, c := range cells {
-		if c.Matches() {
+		if !c.IsRegression() && !c.IsSurprisePass() {
 			continue
 		}
 		if !mismatches {

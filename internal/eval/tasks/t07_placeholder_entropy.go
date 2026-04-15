@@ -6,6 +6,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/musubi-sasu/shhh/internal/eval"
 )
@@ -72,9 +74,8 @@ func (t *PlaceholderEntropy) Run(r eval.Redactor, mode eval.Mode) eval.Result {
 	seen := make(map[string]int, t.N)
 	collisions := 0
 	for i, p := range placeholders {
-		if j, ok := seen[p]; ok {
+		if _, ok := seen[p]; ok {
 			collisions++
-			_ = j
 		}
 		seen[p] = i
 	}
@@ -92,10 +93,10 @@ func (t *PlaceholderEntropy) Run(r eval.Redactor, mode eval.Mode) eval.Result {
 	}
 
 	metrics := map[string]string{
-		"samples":            itoa(t.N),
-		"distinct_placeholders": itoa(len(seen)),
-		"collisions":         itoa(collisions),
-		"value_body_leaks":   itoa(leaks),
+		"samples":               strconv.Itoa(t.N),
+		"distinct_placeholders": strconv.Itoa(len(seen)),
+		"collisions":            strconv.Itoa(collisions),
+		"value_body_leaks":      strconv.Itoa(leaks),
 	}
 
 	if collisions > 0 {
@@ -132,47 +133,9 @@ func containsAny(placeholder, valueBody string, minLen int) bool {
 		return false
 	}
 	for i := 0; i+minLen <= len(valueBody); i++ {
-		needle := valueBody[i : i+minLen]
-		if indexString(placeholder, needle) >= 0 {
+		if strings.Contains(placeholder, valueBody[i:i+minLen]) {
 			return true
 		}
 	}
 	return false
-}
-
-// indexString is a small local implementation of strings.Index to keep this
-// file dependency-free.
-func indexString(haystack, needle string) int {
-	if len(needle) == 0 {
-		return 0
-	}
-	for i := 0; i+len(needle) <= len(haystack); i++ {
-		if haystack[i:i+len(needle)] == needle {
-			return i
-		}
-	}
-	return -1
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := false
-	if n < 0 {
-		neg = true
-		n = -n
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
 }

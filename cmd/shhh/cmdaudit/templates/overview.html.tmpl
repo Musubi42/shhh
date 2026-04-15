@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>shhh audit — {{.Agent}} — {{.AuditDateDisplay}}</title>
+<!-- v0.2: Google Fonts CDN. v0.2.1 polish: embed fonts as base64 so report works offline. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Redaction:wght@400&family=Redaction+35&family=Redaction+50&family=Geist+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0b;
+    --bg-raised: #141416;
+    --fg: #f5f1e8;
+    --fg-dim: #8a8680;
+    --fg-dimmer: #5a5854;
+    --rule: #2a2a2e;
+    --rule-strong: #3f3f44;
+    --leaked: #ff4a1c;
+    --leaked-bg: rgba(255, 74, 28, 0.08);
+    --leaked-bright: #ff6b42;
+    --at-risk: #f5c518;
+    --at-risk-bg: rgba(245, 197, 24, 0.06);
+    --protected: #50c878;
+    --protected-bg: rgba(80, 200, 120, 0.06);
+    --archive: #8a8680;
+    --accent: #3a5bff;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); }
+  body {
+    font-family: 'Geist Mono', ui-monospace, SFMono-Regular, monospace;
+    font-weight: 400;
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--fg);
+    padding: 2.5rem clamp(1.5rem, 5vw, 4rem) 6rem;
+    max-width: 1280px;
+    margin: 0 auto;
+    min-height: 100vh;
+    text-rendering: geometricPrecision;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 220 220' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    opacity: 0.035;
+    mix-blend-mode: overlay;
+    z-index: 100;
+  }
+  body::after {
+    content: '';
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: clamp(0.75rem, 2.5vw, 2rem);
+    width: 1px;
+    background: var(--rule);
+    z-index: 1;
+  }
+
+  .header {
+    border-top: 1px solid var(--rule-strong);
+    border-bottom: 1px solid var(--rule-strong);
+    padding: 1.5rem 0 1.75rem 0;
+    margin-bottom: 3rem;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 2rem;
+    align-items: end;
+    position: relative;
+  }
+  .header::before {
+    content: 'SHHH / FORENSIC AUDIT REPORT';
+    position: absolute;
+    top: -0.45rem;
+    left: 0;
+    background: var(--bg);
+    padding: 0 0.75rem 0 0;
+    font-size: 0.6rem;
+    letter-spacing: 0.25em;
+    color: var(--fg-dimmer);
+  }
+  .brand {
+    font-family: 'Redaction', serif;
+    font-size: 4rem;
+    line-height: 0.85;
+    letter-spacing: -0.02em;
+    font-weight: 400;
+  }
+  .brand-tag {
+    display: block;
+    font-family: 'Redaction 35', 'Redaction', serif;
+    font-size: 1.15rem;
+    letter-spacing: 0.35em;
+    color: var(--fg-dim);
+    margin-top: 0.4rem;
+    text-transform: uppercase;
+  }
+  .header-center {
+    align-self: end;
+    padding-bottom: 0.75rem;
+    color: var(--fg-dim);
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+  .header-center b {
+    display: block;
+    color: var(--fg);
+    font-weight: 500;
+    font-size: 0.9rem;
+    letter-spacing: 0.12em;
+    margin-bottom: 0.3rem;
+  }
+  .header-meta {
+    text-align: right;
+    font-size: 0.8rem;
+    color: var(--fg-dim);
+    line-height: 1.65;
+    align-self: end;
+    padding-bottom: 0.5rem;
+  }
+  .header-meta .ts {
+    color: var(--fg);
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+  }
+  .header-meta .duration {
+    font-size: 0.72rem;
+    color: var(--fg-dimmer);
+  }
+
+  .counters {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    margin-bottom: 2.5rem;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+  }
+  .counter {
+    padding: 1.75rem 1.5rem 1.5rem 1.5rem;
+    border-right: 1px solid var(--rule);
+    position: relative;
+    overflow: hidden;
+  }
+  .counter:last-child { border-right: none; }
+  .counter::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 32px;
+    height: 2px;
+    background: currentColor;
+    opacity: 0.8;
+  }
+  .counter.leaked::before { color: var(--leaked); }
+  .counter.at-risk::before { color: var(--at-risk); }
+  .counter.protected::before { color: var(--protected); }
+  .counter.neutral::before { color: var(--fg-dim); }
+  .counter-label {
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.66rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    color: var(--fg-dim);
+    margin-bottom: 0.6rem;
+  }
+  .counter-value {
+    font-family: 'Redaction', serif;
+    font-size: 4.2rem;
+    line-height: 0.85;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+    color: var(--fg);
+  }
+  .counter.leaked .counter-value { color: var(--leaked); }
+  .counter.at-risk .counter-value { color: var(--at-risk); }
+  .counter.protected .counter-value { color: var(--protected); }
+  .counter-delta {
+    margin-top: 0.75rem;
+    font-size: 0.72rem;
+    color: var(--fg-dimmer);
+    font-variant-numeric: tabular-nums;
+  }
+  .counter-delta .sign-down { color: var(--protected); }
+  .counter-delta .sign-up { color: var(--leaked); }
+  .counter-delta .sign-flat { color: var(--fg-dim); }
+
+  .delta {
+    padding: 1.5rem 1.75rem;
+    border-left: 2px solid var(--protected);
+    background: var(--protected-bg);
+    margin-bottom: 3rem;
+  }
+  .delta-title {
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    color: var(--fg-dim);
+    margin-bottom: 0.8rem;
+  }
+  .delta-lines {
+    font-size: 0.86rem;
+    line-height: 1.8;
+    color: var(--fg);
+  }
+  .delta-lines .arrow {
+    color: var(--fg-dim);
+    padding: 0 0.3rem;
+  }
+  .delta-lines .down { color: var(--protected); }
+  .delta-lines .up { color: var(--leaked); }
+  .delta-lines .flat { color: var(--fg-dim); }
+  .delta-lines .comment { color: var(--fg-dim); font-style: italic; }
+
+  .section-title {
+    font-family: 'Redaction', serif;
+    font-size: 1.4rem;
+    font-weight: 400;
+    letter-spacing: 0.02em;
+    color: var(--fg);
+    margin: 3rem 0 0.5rem 0;
+    display: flex;
+    align-items: baseline;
+    gap: 1.25rem;
+  }
+  .section-title .count {
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--fg-dim);
+    font-weight: 400;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+  .section-rule {
+    height: 1px;
+    background: var(--rule);
+    margin-bottom: 0;
+  }
+
+  .project {
+    padding: 1.75rem 0 1.75rem 0.25rem;
+    border-bottom: 1px solid var(--rule);
+    display: grid;
+    grid-template-columns: 140px 1fr auto;
+    gap: 1.75rem;
+    align-items: start;
+    position: relative;
+    text-decoration: none;
+    color: inherit;
+    transition: background 0.15s ease, padding-left 0.15s ease;
+    cursor: pointer;
+  }
+  .project:hover {
+    background: var(--bg-raised);
+    padding-left: 1rem;
+  }
+  .project:hover::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 1.25rem;
+    bottom: 1.25rem;
+    width: 2px;
+    background: var(--fg);
+  }
+
+  .badge {
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.66rem;
+    font-weight: 500;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    padding: 0.4rem 0.7rem;
+    border: 1px solid currentColor;
+    display: inline-block;
+    white-space: nowrap;
+  }
+  .badge.unprotected {
+    color: var(--leaked);
+    background: var(--leaked-bg);
+  }
+  .badge.protected {
+    color: var(--protected);
+    background: var(--protected-bg);
+  }
+  .badge.archived {
+    color: var(--archive);
+    border-style: dashed;
+  }
+  .badge.clean {
+    color: var(--fg-dim);
+    border-color: var(--rule-strong);
+  }
+
+  .project-body { min-width: 0; }
+  .project-path {
+    font-family: 'Geist Mono', monospace;
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: var(--fg);
+    margin-bottom: 0.65rem;
+    letter-spacing: -0.01em;
+    word-break: break-word;
+  }
+  .project-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 1.75rem;
+    font-size: 0.78rem;
+    color: var(--fg-dim);
+    margin-bottom: 0.75rem;
+  }
+  .project-summary .count { font-variant-numeric: tabular-nums; }
+  .project-summary .count.leaked { color: var(--leaked); }
+  .project-summary .count.at-risk { color: var(--at-risk); }
+  .project-summary .count.protected { color: var(--protected); }
+  .project-summary .sep { color: var(--rule-strong); }
+
+  .project-secrets {
+    margin-top: 0.75rem;
+    padding-left: 1.1rem;
+    border-left: 1px solid var(--rule);
+    font-size: 0.82rem;
+    color: var(--fg-dim);
+  }
+  .project-secret {
+    display: grid;
+    grid-template-columns: 1.4rem 1fr auto;
+    gap: 0.75rem;
+    padding: 0.3rem 0;
+    align-items: baseline;
+  }
+  .project-secret .sev.leaked { color: var(--leaked); }
+  .project-secret .sev.at-risk { color: var(--at-risk); }
+  .project-secret code {
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.82rem;
+    color: var(--fg);
+    letter-spacing: -0.01em;
+  }
+  .project-secret .meta {
+    font-size: 0.72rem;
+    color: var(--fg-dimmer);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .project-expand {
+    font-family: 'Geist Mono', monospace;
+    font-size: 1.4rem;
+    color: var(--fg-dim);
+    align-self: center;
+    transition: transform 0.18s ease, color 0.18s ease;
+    padding: 0 0.5rem;
+    line-height: 1;
+  }
+  .project:hover .project-expand {
+    color: var(--fg);
+    transform: translateX(6px);
+  }
+
+  .footer-action {
+    margin-top: 4rem;
+    padding: 2rem 2.25rem 2.25rem 2.25rem;
+    border: 1px solid var(--leaked);
+    background: var(--leaked-bg);
+    position: relative;
+  }
+  .footer-action::before {
+    content: 'RECOMMENDED ACTIONS';
+    position: absolute;
+    top: -0.5rem;
+    left: 1.5rem;
+    background: var(--bg);
+    padding: 0 0.75rem;
+    font-size: 0.6rem;
+    letter-spacing: 0.25em;
+    color: var(--leaked);
+    font-weight: 500;
+  }
+  .footer-action-title {
+    font-family: 'Redaction', serif;
+    font-size: 1.6rem;
+    color: var(--leaked);
+    margin-bottom: 0.75rem;
+    letter-spacing: -0.01em;
+  }
+  .footer-action-body {
+    font-size: 0.88rem;
+    color: var(--fg);
+    margin-bottom: 1.5rem;
+    max-width: 60ch;
+  }
+  .footer-action pre {
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.78rem;
+    line-height: 1.8;
+    color: var(--fg);
+    background: rgba(0, 0, 0, 0.35);
+    padding: 1rem 1.25rem;
+    border: 1px solid var(--rule);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .footer-action pre .comment { color: var(--fg-dimmer); }
+  .footer-action pre .cmd { color: var(--at-risk); }
+  .footer-action pre a {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px dotted currentColor;
+  }
+
+  .doc-footer {
+    margin-top: 4rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--rule);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 0.72rem;
+    color: var(--fg-dimmer);
+    letter-spacing: 0.1em;
+  }
+  .doc-footer a {
+    color: var(--fg-dim);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--rule-strong);
+  }
+  .doc-footer a:hover {
+    color: var(--fg);
+    border-color: var(--fg-dim);
+  }
+
+  @keyframes reveal {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .header            { animation: reveal 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 0s   both; }
+  .counters          { animation: reveal 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 0.1s both; }
+  .delta             { animation: reveal 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 0.2s both; }
+  .section-title     { animation: reveal 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 0.3s both; }
+  .project:nth-of-type(1) { animation: reveal 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 0.38s both; }
+  .project:nth-of-type(2) { animation: reveal 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 0.44s both; }
+  .project:nth-of-type(3) { animation: reveal 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 0.50s both; }
+  .project:nth-of-type(4) { animation: reveal 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 0.56s both; }
+  .footer-action     { animation: reveal 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 0.7s both; }
+  .doc-footer        { animation: reveal 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 0.85s both; }
+
+  @keyframes pulse-leaked {
+    0%, 100% { border-color: var(--leaked); box-shadow: 0 0 0 0 rgba(255, 74, 28, 0); }
+    50%      { border-color: var(--leaked-bright); box-shadow: 0 0 0 3px rgba(255, 74, 28, 0.06); }
+  }
+  .badge.unprotected { animation: pulse-leaked 3s ease-in-out infinite; }
+
+  @media (max-width: 900px) {
+    .header { grid-template-columns: 1fr; gap: 1.25rem; }
+    .header-meta, .header-center { text-align: left; }
+    .counters { grid-template-columns: repeat(2, 1fr); }
+    .counter { border-bottom: 1px solid var(--rule); }
+    .counter:nth-child(2), .counter:nth-child(4) { border-right: none; }
+    .project { grid-template-columns: 1fr; }
+    .project-expand { display: none; }
+  }
+</style>
+</head>
+<body>
+
+  <header class="header">
+    <h1 class="brand">
+      shhh
+      <span class="brand-tag">forensic audit</span>
+    </h1>
+    <div class="header-center">
+      <b>{{.Agent}}</b>
+      agent under audit
+    </div>
+    <div class="header-meta">
+      <span class="ts">{{.AuditTimeDisplay}}</span><br>
+      {{.TotalProjects}} projects · {{.SessionCount}} sessions{{if .SpanDescription}} · {{.SpanDescription}}{{end}}<br>
+      <span class="duration">scan took {{.ScanDurationDisplay}}</span>
+    </div>
+  </header>
+
+  <section class="counters">
+    <div class="counter leaked">
+      <div class="counter-label">Already leaked</div>
+      <div class="counter-value">{{.Leaked.Value}}</div>
+      <div class="counter-delta">{{if .Leaked.DeltaClass}}<span class="{{.Leaked.DeltaClass}}">{{.Leaked.DeltaText}}</span>{{else}}{{.Leaked.DeltaText}}{{end}}</div>
+    </div>
+    <div class="counter at-risk">
+      <div class="counter-label">At risk</div>
+      <div class="counter-value">{{.AtRisk.Value}}</div>
+      <div class="counter-delta">{{if .AtRisk.DeltaClass}}<span class="{{.AtRisk.DeltaClass}}">{{.AtRisk.DeltaText}}</span>{{else}}{{.AtRisk.DeltaText}}{{end}}</div>
+    </div>
+    <div class="counter protected">
+      <div class="counter-label">Protected</div>
+      <div class="counter-value">{{.Protected.Value}}</div>
+      <div class="counter-delta">{{if .Protected.DeltaClass}}<span class="{{.Protected.DeltaClass}}">{{.Protected.DeltaText}}</span>{{else}}{{.Protected.DeltaText}}{{end}}</div>
+    </div>
+    <div class="counter neutral">
+      <div class="counter-label">Projects</div>
+      <div class="counter-value">{{.ProjectsTotal.Value}}</div>
+      <div class="counter-delta">{{.ProjectsTotal.DeltaText}}</div>
+    </div>
+  </section>
+
+  {{if .HasDelta}}
+  <div class="delta">
+    <div class="delta-title">{{.Delta.TitleText}}</div>
+    <div class="delta-lines">
+      {{range $i, $line := .Delta.Lines}}{{if $i}}<br>
+      {{end}}{{$line.Emoji}} {{$line.Label}} <span class="arrow">→</span> <span class="{{$line.Class}}">{{$line.Before}} → {{$line.After}}</span>{{if $line.Comment}} <span class="comment">· {{$line.Comment}}</span>{{end}}{{end}}
+    </div>
+  </div>
+  {{end}}
+
+  <h2 class="section-title">
+    Projects
+    <span class="count">· {{.SectionTitle}}</span>
+  </h2>
+  <div class="section-rule"></div>
+
+  {{if .VisibleProjects}}{{range .VisibleProjects}}
+  <a class="project" href="projects/{{.Slug}}.html">
+    <span class="badge {{.BadgeClass}}">{{.BadgeLabel}}</span>
+    <div class="project-body">
+      <div class="project-path">{{.DisplayPath}}</div>
+      <div class="project-summary">
+        {{range $i, $part := .SummaryParts}}{{if $i}}
+        <span class="sep">·</span>
+        {{end}}<span>{{$part}}</span>{{end}}
+      </div>
+      {{if .Secrets}}
+      <div class="project-secrets">
+        {{range .Secrets}}<div class="project-secret">
+          <span class="sev {{.SevClass}}">{{.Emoji}}</span>
+          <code>{{.Placeholder}}</code>
+          <span class="meta">{{.Meta}}</span>
+        </div>
+        {{end}}
+      </div>
+      {{end}}
+    </div>
+    <span class="project-expand">→</span>
+  </a>
+  {{end}}{{else}}
+  <div class="project">
+    <span class="badge clean">No findings</span>
+    <div class="project-body">
+      <div class="project-path">All projects clean.</div>
+      <div class="project-summary">
+        <span>No leaked or at-risk secrets detected in any project.</span>
+      </div>
+    </div>
+  </div>
+  {{end}}
+
+  {{if .HasLeakedAnywhere}}
+  <section class="footer-action">
+    <div class="footer-action-title">Rotate {{.Footer.LeakedCount}} leaked secret{{if ne .Footer.LeakedCount 1}}s{{end}} now</div>
+    <p class="footer-action-body">
+      These secrets were sent to Claude's servers in past sessions. Rotation
+      is not optional — assume the raw values are already on Anthropic's
+      infrastructure. shhh protects future sessions, not past ones.
+    </p>
+    <pre>{{if .Footer.RotationDashboards}}<span class="comment"># rotation dashboards</span>
+{{range .Footer.RotationDashboards}}<span class="cmd">{{.Vendor}}</span>    →  <a href="{{.URL}}">{{.URL}}</a>
+{{end}}{{end}}{{if .Footer.UnprotectedProjects}}
+<span class="comment"># protect the {{.Footer.AtRiskCount}} at-risk project{{if ne .Footer.AtRiskCount 1}}s{{end}} so the next session can't leak them</span>
+{{range .Footer.UnprotectedProjects}}<span class="cmd">cd</span> {{.DisplayPath}} &amp;&amp; <span class="cmd">shhh install</span>
+{{end}}{{end}}</pre>
+  </section>
+  {{end}}
+
+  <footer class="doc-footer">
+    <span>{{.GeneratedBy}}</span>
+    <span><a href="#">report bug</a> · <a href="#">docs</a></span>
+  </footer>
+
+</body>
+</html>

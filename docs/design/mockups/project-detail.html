@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>~/work/backend — shhh audit — claude code</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Redaction:wght@400&family=Redaction+35&family=Redaction+50&family=Geist+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0b;
+    --bg-raised: #141416;
+    --fg: #f5f1e8;
+    --fg-dim: #8a8680;
+    --fg-dimmer: #5a5854;
+    --rule: #2a2a2e;
+    --rule-strong: #3f3f44;
+    --leaked: #ff4a1c;
+    --leaked-bg: rgba(255, 74, 28, 0.08);
+    --leaked-bright: #ff6b42;
+    --at-risk: #f5c518;
+    --at-risk-bg: rgba(245, 197, 24, 0.06);
+    --protected: #50c878;
+    --protected-bg: rgba(80, 200, 120, 0.06);
+    --archive: #8a8680;
+    --accent: #3a5bff;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); }
+  body {
+    font-family: 'Geist Mono', ui-monospace, SFMono-Regular, monospace;
+    font-weight: 400;
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--fg);
+    padding: 2.5rem clamp(1.5rem, 5vw, 4rem) 6rem;
+    max-width: 1280px;
+    margin: 0 auto;
+    min-height: 100vh;
+    text-rendering: geometricPrecision;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 220 220' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    opacity: 0.035;
+    mix-blend-mode: overlay;
+    z-index: 100;
+  }
+  body::after {
+    content: '';
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: clamp(0.75rem, 2.5vw, 2rem);
+    width: 1px;
+    background: var(--rule);
+    z-index: 1;
+  }
+
+  /* ---------- Back nav ---------- */
+  .back {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.75rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+    text-decoration: none;
+    padding: 0.5rem 0;
+    margin-bottom: 2rem;
+    border-bottom: 1px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .back:hover { color: var(--fg); border-color: var(--fg-dim); }
+  .back::before { content: '←'; font-size: 1rem; line-height: 1; }
+
+  /* ---------- Project header ---------- */
+  .proj-header {
+    padding: 2rem 0 2.5rem 0;
+    border-top: 1px solid var(--rule-strong);
+    border-bottom: 1px solid var(--rule-strong);
+    margin-bottom: 3rem;
+    position: relative;
+  }
+  .proj-header::before {
+    content: 'PROJECT DOSSIER';
+    position: absolute;
+    top: -0.45rem;
+    left: 0;
+    background: var(--bg);
+    padding-right: 0.75rem;
+    font-size: 0.6rem;
+    letter-spacing: 0.25em;
+    color: var(--fg-dimmer);
+  }
+  .proj-title-row {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+  }
+  .proj-title {
+    font-family: 'Redaction', serif;
+    font-size: 2.75rem;
+    line-height: 1;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    word-break: break-word;
+    flex: 1;
+    min-width: 0;
+  }
+  .proj-title .dir {
+    color: var(--fg-dim);
+  }
+  .proj-title .base {
+    color: var(--fg);
+  }
+  .badge {
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.66rem;
+    font-weight: 500;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    padding: 0.45rem 0.8rem;
+    border: 1px solid currentColor;
+    display: inline-block;
+    white-space: nowrap;
+  }
+  .badge.unprotected {
+    color: var(--leaked);
+    background: var(--leaked-bg);
+  }
+  .badge.protected { color: var(--protected); background: var(--protected-bg); }
+  .badge.archived { color: var(--archive); border-style: dashed; }
+
+  @keyframes pulse-leaked {
+    0%, 100% { border-color: var(--leaked); box-shadow: 0 0 0 0 rgba(255, 74, 28, 0); }
+    50%      { border-color: var(--leaked-bright); box-shadow: 0 0 0 3px rgba(255, 74, 28, 0.06); }
+  }
+  .badge.unprotected { animation: pulse-leaked 3s ease-in-out infinite; }
+
+  .proj-meta {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--rule);
+  }
+  .meta-cell {
+    padding: 0 1.25rem;
+    border-left: 1px solid var(--rule);
+  }
+  .meta-cell:first-child { padding-left: 0; border-left: none; }
+  .meta-label {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    color: var(--fg-dim);
+    margin-bottom: 0.4rem;
+  }
+  .meta-value {
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.95rem;
+    color: var(--fg);
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+  }
+  .meta-value.leaked { color: var(--leaked); }
+  .meta-value.at-risk { color: var(--at-risk); }
+
+  /* ---------- Section titles ---------- */
+  .section {
+    margin-bottom: 3.5rem;
+  }
+  .section-title {
+    font-family: 'Redaction', serif;
+    font-size: 1.4rem;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+    color: var(--fg);
+    margin-bottom: 0.4rem;
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+  }
+  .section-title .marker {
+    width: 0.65rem;
+    height: 0.65rem;
+    display: inline-block;
+  }
+  .section-title.leaked { color: var(--leaked); }
+  .section-title.leaked .marker { background: var(--leaked); }
+  .section-title.at-risk { color: var(--at-risk); }
+  .section-title.at-risk .marker { background: var(--at-risk); }
+  .section-title.history { color: var(--fg); }
+  .section-title.history .marker { background: var(--fg-dim); }
+  .section-title .count {
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--fg-dim);
+    font-weight: 400;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+  .section-blurb {
+    font-size: 0.84rem;
+    color: var(--fg-dim);
+    margin-top: 0.3rem;
+    margin-bottom: 1.5rem;
+    max-width: 68ch;
+    line-height: 1.7;
+  }
+
+  /* ---------- Secrets table ---------- */
+  .secrets-table {
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+  }
+  .secret-row {
+    display: grid;
+    grid-template-columns: 1fr 130px 130px 200px;
+    gap: 1.5rem;
+    padding: 1.25rem 0;
+    border-bottom: 1px solid var(--rule);
+    align-items: start;
+  }
+  .secret-row:last-child { border-bottom: none; }
+  .secret-row:hover { background: var(--bg-raised); }
+  .secret-placeholder {
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.95rem;
+    color: var(--fg);
+    letter-spacing: -0.01em;
+    word-break: break-all;
+    padding-right: 0.5rem;
+  }
+  .secret-meta {
+    font-size: 0.78rem;
+    color: var(--fg-dim);
+    margin-top: 0.25rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .secret-cell {
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--fg);
+    font-variant-numeric: tabular-nums;
+  }
+  .secret-cell .label {
+    display: block;
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: var(--fg-dimmer);
+    margin-bottom: 0.3rem;
+  }
+  .secret-action {
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.78rem;
+  }
+  .secret-action .label {
+    display: block;
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: var(--fg-dimmer);
+    margin-bottom: 0.3rem;
+  }
+  .secret-action a {
+    color: var(--leaked-bright);
+    text-decoration: none;
+    border-bottom: 1px dotted currentColor;
+  }
+  .secret-action a:hover {
+    color: var(--fg);
+  }
+
+  /* At-risk variant — no rotation cell, file:line instead */
+  .secret-row.at-risk-row {
+    grid-template-columns: 1fr 260px 130px;
+  }
+
+  /* ---------- Session timeline ---------- */
+  .timeline {
+    padding-top: 0.5rem;
+  }
+  .timeline-item {
+    display: grid;
+    grid-template-columns: 8rem 1fr auto;
+    gap: 1.5rem;
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--rule);
+    align-items: baseline;
+  }
+  .timeline-item:last-child { border-bottom: none; }
+  .timeline-date {
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.82rem;
+    color: var(--fg);
+    font-variant-numeric: tabular-nums;
+  }
+  .timeline-event {
+    font-size: 0.85rem;
+    color: var(--fg-dim);
+  }
+  .timeline-event strong {
+    color: var(--fg);
+    font-weight: 500;
+  }
+  .timeline-event .leak-pill {
+    color: var(--leaked);
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.72rem;
+    padding: 0.15rem 0.5rem;
+    border: 1px solid var(--leaked);
+    background: var(--leaked-bg);
+    margin-left: 0.5rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .timeline-session {
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--fg-dimmer);
+    text-align: right;
+  }
+
+  /* ---------- Actions ---------- */
+  .actions {
+    margin-top: 2rem;
+    padding: 2rem 2.25rem 2.25rem 2.25rem;
+    border: 1px solid var(--leaked);
+    background: var(--leaked-bg);
+    position: relative;
+  }
+  .actions::before {
+    content: 'NEXT ACTIONS';
+    position: absolute;
+    top: -0.5rem;
+    left: 1.5rem;
+    background: var(--bg);
+    padding: 0 0.75rem;
+    font-size: 0.6rem;
+    letter-spacing: 0.25em;
+    color: var(--leaked);
+    font-weight: 500;
+  }
+  .actions-title {
+    font-family: 'Redaction', serif;
+    font-size: 1.4rem;
+    color: var(--leaked);
+    margin-bottom: 0.5rem;
+  }
+  .actions p {
+    font-size: 0.85rem;
+    color: var(--fg);
+    margin-bottom: 1.25rem;
+  }
+  .actions pre {
+    font-family: 'Geist Mono', monospace;
+    font-size: 0.78rem;
+    line-height: 1.8;
+    color: var(--fg);
+    background: rgba(0, 0, 0, 0.35);
+    padding: 1rem 1.25rem;
+    border: 1px solid var(--rule);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .actions pre .comment { color: var(--fg-dimmer); }
+  .actions pre .cmd { color: var(--at-risk); }
+  .actions pre a {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px dotted currentColor;
+  }
+
+  /* ---------- Footer ---------- */
+  .doc-footer {
+    margin-top: 4rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--rule);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 0.72rem;
+    color: var(--fg-dimmer);
+    letter-spacing: 0.1em;
+  }
+  .doc-footer a {
+    color: var(--fg-dim);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--rule-strong);
+  }
+  .doc-footer a:hover {
+    color: var(--fg);
+    border-color: var(--fg-dim);
+  }
+
+  /* ---------- Page-load reveal ---------- */
+  @keyframes reveal {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .back             { animation: reveal 0.6s ease 0s    both; }
+  .proj-header      { animation: reveal 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 0.05s both; }
+  .section:nth-of-type(1) { animation: reveal 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 0.15s both; }
+  .section:nth-of-type(2) { animation: reveal 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 0.25s both; }
+  .section:nth-of-type(3) { animation: reveal 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 0.35s both; }
+  .actions          { animation: reveal 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 0.45s both; }
+  .doc-footer       { animation: reveal 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 0.6s both; }
+
+  @media (max-width: 900px) {
+    .proj-title { font-size: 2rem; }
+    .proj-meta { grid-template-columns: repeat(2, 1fr); gap: 1rem 0; }
+    .meta-cell:nth-child(3) { border-left: none; padding-left: 0; }
+    .secret-row, .secret-row.at-risk-row { grid-template-columns: 1fr; }
+    .timeline-item { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+  <a class="back" href="overview.html">back to audit</a>
+
+  <header class="proj-header">
+    <div class="proj-title-row">
+      <h1 class="proj-title">
+        <span class="dir">~/work/</span><span class="base">backend</span>
+      </h1>
+      <span class="badge unprotected">Unprotected</span>
+    </div>
+    <div class="proj-meta">
+      <div class="meta-cell">
+        <div class="meta-label">Sessions</div>
+        <div class="meta-value">18</div>
+      </div>
+      <div class="meta-cell">
+        <div class="meta-label">Leaked</div>
+        <div class="meta-value leaked">2 secrets</div>
+      </div>
+      <div class="meta-cell">
+        <div class="meta-label">At risk</div>
+        <div class="meta-value at-risk">2 secrets</div>
+      </div>
+      <div class="meta-cell">
+        <div class="meta-label">First seen</div>
+        <div class="meta-value">2026-01-12</div>
+      </div>
+    </div>
+  </header>
+
+  <section class="section">
+    <h2 class="section-title leaked">
+      <span class="marker"></span>Already leaked to Claude
+      <span class="count">2 secrets · rotation required</span>
+    </h2>
+    <p class="section-blurb">
+      These secrets appeared in Claude Code's local history before shhh was
+      installed here. The raw values have been transmitted to Claude's
+      servers and must be considered compromised. Rotate them; shhh cannot
+      undo what has already been sent.
+    </p>
+
+    <div class="secrets-table">
+
+      <div class="secret-row">
+        <div>
+          <div class="secret-placeholder">[STRIPE_LIVE_KEY:sk_live_...:a1b2]</div>
+          <div class="secret-meta">source: session transcript · paste cache</div>
+        </div>
+        <div class="secret-cell">
+          <span class="label">First seen</span>
+          2026-03-21
+        </div>
+        <div class="secret-cell">
+          <span class="label">Last seen</span>
+          2026-04-10
+        </div>
+        <div class="secret-action">
+          <span class="label">Rotate at</span>
+          <a href="#">dashboard.stripe.com/apikeys</a>
+        </div>
+      </div>
+
+      <div class="secret-row">
+        <div>
+          <div class="secret-placeholder">[AWS_ACCESS_KEY:AKIA...:c3d4]</div>
+          <div class="secret-meta">source: session transcript</div>
+        </div>
+        <div class="secret-cell">
+          <span class="label">First seen</span>
+          2026-03-24
+        </div>
+        <div class="secret-cell">
+          <span class="label">Last seen</span>
+          2026-04-01
+        </div>
+        <div class="secret-action">
+          <span class="label">Rotate at</span>
+          <a href="#">console.aws.amazon.com/iam</a>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title at-risk">
+      <span class="marker"></span>Currently at risk
+      <span class="count">2 secrets · in project files</span>
+    </h2>
+    <p class="section-blurb">
+      Found in files that Claude Code would read on its next session. shhh
+      is not installed in this project yet, so the next read will leak
+      them. Install shhh here or move them out of plaintext.
+    </p>
+
+    <div class="secrets-table">
+
+      <div class="secret-row at-risk-row">
+        <div>
+          <div class="secret-placeholder">[POSTGRES_CONNSTRING:admin@prod-db.internal:5432/myapp:e5f6]</div>
+          <div class="secret-meta">structural redaction · host and database name preserved for agent reasoning</div>
+        </div>
+        <div class="secret-cell">
+          <span class="label">Location</span>
+          .env · line 4
+        </div>
+        <div class="secret-cell">
+          <span class="label">Rule</span>
+          postgres_url
+        </div>
+      </div>
+
+      <div class="secret-row at-risk-row">
+        <div>
+          <div class="secret-placeholder">[SENDGRID_API_KEY:SG...:g7h8]</div>
+          <div class="secret-meta">detected by pattern match</div>
+        </div>
+        <div class="secret-cell">
+          <span class="label">Location</span>
+          config/mail.json · line 12
+        </div>
+        <div class="secret-cell">
+          <span class="label">Rule</span>
+          sendgrid_api_key
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section class="section">
+    <h2 class="section-title history">
+      <span class="marker"></span>Recent sessions in this project
+      <span class="count">last 6 of 18</span>
+    </h2>
+
+    <div class="timeline">
+      <div class="timeline-item">
+        <div class="timeline-date">2026-04-10</div>
+        <div class="timeline-event">
+          Read <strong>.env</strong> · 14 tool calls
+          <span class="leak-pill">leaked STRIPE_LIVE_KEY</span>
+        </div>
+        <div class="timeline-session">f2a9...b7c1</div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-date">2026-04-08</div>
+        <div class="timeline-event">
+          Edit <strong>config/mail.json</strong> · 6 tool calls
+        </div>
+        <div class="timeline-session">9d43...18fa</div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-date">2026-04-01</div>
+        <div class="timeline-event">
+          Read <strong>.env</strong> · 22 tool calls
+          <span class="leak-pill">leaked AWS_ACCESS_KEY</span>
+        </div>
+        <div class="timeline-session">71bb...2c0e</div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-date">2026-03-28</div>
+        <div class="timeline-event">
+          Bash <strong>cat .env</strong> · 8 tool calls
+        </div>
+        <div class="timeline-session">a3c0...8d74</div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-date">2026-03-24</div>
+        <div class="timeline-event">
+          Read <strong>.env</strong> · 11 tool calls
+          <span class="leak-pill">leaked AWS_ACCESS_KEY</span>
+        </div>
+        <div class="timeline-session">55e1...ff82</div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-date">2026-03-21</div>
+        <div class="timeline-event">
+          Read <strong>.env</strong> · 19 tool calls
+          <span class="leak-pill">leaked STRIPE_LIVE_KEY</span>
+        </div>
+        <div class="timeline-session">b4e7...44a9</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="actions">
+    <div class="actions-title">Rotate and protect</div>
+    <p>
+      Rotate the 2 leaked secrets using the dashboards linked above, then
+      install shhh in this project so the rotated values — and any future
+      ones — never reach Claude.
+    </p>
+    <pre><span class="comment"># step 1 · rotate (non-negotiable)</span>
+<span class="cmd">open</span> <a href="#">https://dashboard.stripe.com/apikeys</a>
+<span class="cmd">open</span> <a href="#">https://console.aws.amazon.com/iam/home#/users</a>
+
+<span class="comment"># step 2 · protect this project</span>
+<span class="cmd">cd</span> ~/work/backend
+<span class="cmd">shhh install</span>
+
+<span class="comment"># step 3 · verify — next shhh audit should show this project as Protected</span>
+<span class="cmd">shhh audit</span></pre>
+  </section>
+
+  <footer class="doc-footer">
+    <span>shhh v0.2.0-dev · project dossier · ~/work/backend</span>
+    <span><a href="overview.html">← back to audit</a></span>
+  </footer>
+
+</body>
+</html>

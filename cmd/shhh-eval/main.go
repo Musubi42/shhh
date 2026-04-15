@@ -25,9 +25,10 @@ Usage:
   shhh-eval              Run the full suite against the shhh reference adapter.
   shhh-eval help         Show this message.
 
-Phase 0 ships task 7 (placeholder entropy) and task 8 (false-positive
-calibration). The remaining 8 tasks require an agent runner and will be
-added as the harness matures.
+Phase 0 ships task 1 (JWT decode), task 3 (consistency across files),
+task 5 (grep for hardcoded secret), task 7 (placeholder entropy), and
+task 8 (false-positive calibration). The remaining tasks require an
+agent runner and will be added as the harness matures.
 `)
 		return
 	}
@@ -36,6 +37,10 @@ added as the harness matures.
 
 	suite := []eval.Task{
 		tasks.NewJWTDecode(),
+		tasks.NewConnStringDiff(),
+		tasks.NewConsistency(),
+		tasks.NewGrepHardcoded(),
+		tasks.NewURLMismatch(),
 		tasks.NewPlaceholderEntropy(),
 		tasks.NewPublicCorpus(),
 	}

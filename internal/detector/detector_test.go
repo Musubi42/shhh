@@ -13,7 +13,7 @@ func TestDetect_KnownPatterns(t *testing.T) {
 		wantRule string
 	}{
 		{"stripe live", `STRIPE_KEY=sk_live_4eC39HqLyjWDarjtT1zdp7dc`, "stripe-live-key"},
-		{"aws access", `AWS_ACCESS_KEY=AKIA3EXAMPLE7XYZABC1`, "aws-access-key"},
+		{"aws access", `AWS_ACCESS_KEY=AKIA3EXAMPLE7XYZABC4`, "aws-access-key"},
 		{"github pat", `GH_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789`, "github-pat"},
 		{"anthropic", `ANTHROPIC=sk-ant-api03-abcdefghij_klmnopqrst`, "anthropic-key"},
 		{"postgres", `DATABASE_URL=postgresql://admin:s3cret@prod-db:5432/myapp`, "postgres-url"},
@@ -68,6 +68,29 @@ func TestDetect_IgnoresLowEntropy(t *testing.T) {
 	}
 }
 
+// TestDetect_IgnoresPathLikeTokens pins the fix for a CSS-header false
+// positive. A comment listing source files tripped HIGH_ENTROPY on
+// docs/design/vault/mockups/DESIGN-NOTES because / is in the entropy
+// token charset and the path cleared 4.5 bit/char. The guard skips
+// tokens with 3+ slashes: rare in real base64 secrets, common in
+// filesystem paths.
+func TestDetect_IgnoresPathLikeTokens(t *testing.T) {
+	d := New()
+	input := `/* Eurio prototype -- design tokens
+ *   docs/design/onboarding/mockups/DESIGN-NOTES.md
+ *   docs/design/scan/mockups/DESIGN-NOTES.md
+ *   docs/design/coin-detail/mockups/DESIGN-NOTES.md
+ *   docs/design/vault/mockups/DESIGN-NOTES.md
+ *   docs/design/profile/mockups/DESIGN-NOTES.md
+ */`
+	fs := d.Detect([]byte(input))
+	for _, f := range fs {
+		if f.Rule == "entropy" {
+			t.Errorf("false positive on path-like token: %q", f.Value)
+		}
+	}
+}
+
 func TestDetect_PublicExampleCorpus(t *testing.T) {
 	// Task 8 calibration: these must NOT be flagged.
 	d := New()
@@ -104,6 +127,57 @@ func TestDetect_KnownExamplesAllowlisted(t *testing.T) {
 		if len(fs) > 0 {
 			t.Errorf("known example should be allowlisted: %q -> %+v", s, fs)
 		}
+	}
+}
+
+// TestDetect_GitleaksDerivedRules pins the rules transcribed from
+// gitleaks in entry 10. One fixture per rule. If any fixture stops
+// matching its rule, the rule was broken by a later edit.
+func TestDetect_GitleaksDerivedRules(t *testing.T) {
+	d := New()
+	cases := []struct {
+		name  string
+		input string
+		rule  string
+	}{
+		{"github-app-token", "GITHUB=ghs_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "github-app-token"},
+		{"github-refresh-token", "GHR=ghr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "github-refresh-token"},
+		{"github-fine-grained-pat", "GHPT=github_pat_" + strings.Repeat("A", 82), "github-fine-grained-pat"},
+		{"gitlab-pat", "GL=glpat-aaaaaaaaaaaaaaaaaaaa", "gitlab-pat"},
+		{"gitlab-ptt", "GLPTT=glptt-" + strings.Repeat("a", 40), "gitlab-ptt"},
+		{"slack-app-token", "SLACK=xapp-1-ABCDEFG-12345-abcdefghijklmn", "slack-app-token"},
+		{"slack-webhook-url", "URL=https://hooks.slack.com/services/" + strings.Repeat("A", 44), "slack-webhook-url"},
+		{"1password-secret-key", "OP=A3-ABCDEF-ABCDEFGHIJK-ABCDE-ABCDE-ABCDE", "1password-secret-key"},
+		{"age-secret-key", "AGE=AGE-SECRET-KEY-1" + strings.Repeat("Q", 58), "age-secret-key"},
+		{"npm-access-token", "NPM=npm_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "npm-access-token"},
+		{"pypi-upload-token", "PYPI=pypi-AgEIcHlwaS5vcmc" + strings.Repeat("a", 60), "pypi-upload-token"},
+		{"sendgrid-api-token", "SG=SG." + strings.Repeat("A", 22) + "." + strings.Repeat("B", 43), "sendgrid-api-token"},
+		{"databricks-api-token", "DB=dapi" + strings.Repeat("a", 32), "databricks-api-token"},
+		{"digitalocean-pat", "DO=dop_v1_" + strings.Repeat("a", 64), "digitalocean-pat"},
+		{"digitalocean-access-token", "DO=doo_v1_" + strings.Repeat("a", 64), "digitalocean-access-token"},
+		{"doppler-api-token", "DOPPLER=dp.pt." + strings.Repeat("a", 43), "doppler-api-token"},
+		{"huggingface-access-token", "HF=hf_" + strings.Repeat("a", 34), "huggingface-access-token"},
+		{"linear-api-key", "LIN=lin_api_" + strings.Repeat("a", 40), "linear-api-key"},
+		{"notion-api-token", "NOT=ntn_" + strings.Repeat("1", 11) + strings.Repeat("A", 35), "notion-api-token"},
+		{"postman-api-token", "PM=PMAK-" + strings.Repeat("a", 24) + "-" + strings.Repeat("b", 34), "postman-api-token"},
+		{"shopify-access-token", "SH=shpat_" + strings.Repeat("a", 32), "shopify-access-token"},
+		{"shopify-shared-secret", "SH=shpss_" + strings.Repeat("a", 32), "shopify-shared-secret"},
+		{"vault-service-token", "V=hvs." + strings.Repeat("a", 100), "vault-service-token"},
+		{"grafana-service-account", "GF=glsa_" + strings.Repeat("a", 32) + "_abcdef12", "grafana-service-account-token"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fs := d.Detect([]byte(tc.input))
+			if len(fs) == 0 {
+				t.Fatalf("no findings for %q", tc.input)
+			}
+			for _, f := range fs {
+				if f.Rule == tc.rule {
+					return
+				}
+			}
+			t.Errorf("expected rule %q, got %+v", tc.rule, fs)
+		})
 	}
 }
 

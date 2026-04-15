@@ -1,9 +1,14 @@
 // Package detector runs the secret detection pipeline over text content.
 //
-// The pipeline has three stages, matching PRD §7.2:
-//  1. Known pattern matching via built-in rules
-//  2. Shannon-entropy analysis for high-entropy strings missed by patterns
-//  3. (cross-reference is handled by the scanner, not the detector)
+// In-file pipeline (PRD §7.2 stages 1–2):
+//  1. Known pattern matching via built-in rules, filtered by the
+//     public-placeholder allowlist (rules.IsKnownExample).
+//  2. Shannon-entropy analysis for high-entropy strings missed by patterns,
+//     gated by charset diversity and the integrity-prefix skip.
+//
+// Stage 3 from the PRD (cross-reference against .env values) lives in the
+// scanner package, because it needs filesystem context the detector does
+// not have.
 package detector
 
 import (
@@ -21,8 +26,14 @@ type Finding struct {
 	Rule         string
 	Label        string
 	PublicPrefix string
-	Description  string
-	Start, End   int
+	// StructuralDesc, if non-empty, carries a structural public
+	// description of the value (e.g., "admin@prod-db:5432/myapp" for a
+	// postgres URL) that overrides the default `PublicPrefix...`
+	// rendering when the session map builds a placeholder. Populated
+	// by rules that provide a Normalize hook.
+	StructuralDesc string
+	Description    string
+	Start, End     int
 }
 
 // Detector runs the detection pipeline.
@@ -79,14 +90,19 @@ func (d *Detector) Detect(content []byte) []Finding {
 			if rules.IsKnownExample(value) {
 				continue
 			}
+			var structural string
+			if r.Normalize != nil {
+				structural = r.Normalize(value)
+			}
 			findings = append(findings, Finding{
-				Value:        value,
-				Rule:         r.Name,
-				Label:        r.Label,
-				PublicPrefix: r.PublicPrefix,
-				Description:  r.Description,
-				Start:        m[0],
-				End:          m[1],
+				Value:          value,
+				Rule:           r.Name,
+				Label:          r.Label,
+				PublicPrefix:   r.PublicPrefix,
+				StructuralDesc: structural,
+				Description:    r.Description,
+				Start:          m[0],
+				End:            m[1],
 			})
 		}
 	}
@@ -109,6 +125,15 @@ func (d *Detector) Detect(content []byte) []Finding {
 			continue
 		}
 		if rules.IsKnownExample(token) {
+			continue
+		}
+		// Path-like guard: tokens with ≥3 forward slashes are almost
+		// always filesystem paths or URL path segments, not secrets.
+		// Real secrets (base64, JWT, API keys) contain at most 1–2
+		// slashes even in worst-case base64 encoding. Without this
+		// guard, comment blocks listing source files trip the entropy
+		// fallback — e.g. `docs/design/vault/mockups/DESIGN-NOTES`.
+		if strings.Count(token, "/") >= 3 {
 			continue
 		}
 		e := shannonEntropy(token)
@@ -135,7 +160,7 @@ func (d *Detector) Detect(content []byte) []Finding {
 		})
 	}
 
-	sort.Slice(findings, func(i, j int) bool {
+	sort.SliceStable(findings, func(i, j int) bool {
 		return findings[i].Start < findings[j].Start
 	})
 	return dedupe(findings)
@@ -212,9 +237,10 @@ func overlaps(iv [][2]int, s, e int) bool {
 	return false
 }
 
-// dedupe removes findings with identical spans. When a span has both a rule
-// match and an entropy match, the rule match wins (it's earlier in the slice
-// after sort-stable behavior on equal keys).
+// dedupe removes findings with identical spans. Pattern rules are appended
+// before entropy matches and Detect sorts stably by start offset, so when
+// both a rule match and an entropy match share a span the rule match comes
+// first and wins.
 func dedupe(fs []Finding) []Finding {
 	if len(fs) == 0 {
 		return fs

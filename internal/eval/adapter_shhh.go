@@ -1,6 +1,7 @@
 package eval
 
 import (
+	"strconv"
 	"sync"
 
 	"github.com/musubi-sasu/shhh/internal/detector"
@@ -32,7 +33,7 @@ func (a *ShhhAdapter) NewSession() SessionID {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.seq++
-	id := SessionID(genID(a.seq))
+	id := SessionID("shhh-sess-" + strconv.Itoa(a.seq))
 	a.sessions[id] = redactor.New(a.det, session.New())
 	return id
 }
@@ -59,43 +60,15 @@ func (a *ShhhAdapter) Rehydrate(sess SessionID, content []byte) []byte {
 }
 
 func (a *ShhhAdapter) ResolvePlaceholder(sess SessionID, placeholder string) (string, bool) {
-	// Phase 0 note: the current shhh redactor exposes rehydration at the
-	// content level, not individual placeholder lookup. We emulate the
-	// latter by rehydrating a content buffer containing just the
-	// placeholder and checking if it changed. This is sufficient for the
-	// harness tests and will be replaced by direct session-map access in
-	// Phase 4 when the daemon's session map has a public lookup API.
 	r := a.lookup(sess)
 	if r == nil {
 		return "", false
 	}
-	out := r.Rehydrate([]byte(placeholder))
-	if string(out) == placeholder {
-		return "", false
-	}
-	return string(out), true
+	return r.Resolve(placeholder)
 }
 
 func (a *ShhhAdapter) lookup(sess SessionID) *redactor.Redactor {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.sessions[sess]
-}
-
-func genID(n int) string {
-	return "shhh-sess-" + itoa(n)
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(buf[i:])
 }

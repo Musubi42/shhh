@@ -15,7 +15,7 @@ func newTestRedactor() *Redactor {
 func TestRedactBasic(t *testing.T) {
 	r := newTestRedactor()
 	input := `STRIPE_KEY=sk_live_4eC39HqLyjWDarjtT1zdp7dc
-AWS=AKIA3EXAMPLE7XYZABC1
+AWS=AKIA3EXAMPLE7XYZABC4
 HOST=localhost`
 	out, findings := r.RedactString(input)
 	if len(findings) < 2 {
@@ -24,7 +24,7 @@ HOST=localhost`
 	if strings.Contains(out, "sk_live_4eC39HqLyjWDarjtT1zdp7dc") {
 		t.Error("raw Stripe key leaked in output")
 	}
-	if strings.Contains(out, "AKIA3EXAMPLE7XYZABC1") {
+	if strings.Contains(out, "AKIA3EXAMPLE7XYZABC4") {
 		t.Error("raw AWS key leaked in output")
 	}
 	if !strings.Contains(out, "STRIPE_LIVE_KEY") {
