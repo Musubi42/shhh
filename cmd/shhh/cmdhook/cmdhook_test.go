@@ -439,3 +439,39 @@ func TestSessionEndWipesCache(t *testing.T) {
 		t.Errorf("session dir should be gone after SessionEnd, got err=%v", err)
 	}
 }
+
+func TestReadEnvTemplateUsesGenericGate(t *testing.T) {
+	// .env.example and friends are committed templates of placeholder
+	// values. They must NOT get the looser env-aware pass (which would
+	// redact short custom tokens / "your-api-key-here" placeholders).
+	// They still run through the normal detector, so a real
+	// pattern-matched key committed into one by mistake is still caught.
+	t.Setenv("SHHH_CACHE_DIR", t.TempDir())
+	dir := t.TempDir()
+	envPath := filepath.Join(dir, ".env.example")
+	// A short custom token (env-aware-only) plus a real Stripe key.
+	content := "CUSTOM_TOKEN=Mk9zPwXr7AqN4bVtC2yLhG\nSTRIPE=" + stripeKey + "\n"
+	if err := os.WriteFile(envPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	resp := runClaude(t, map[string]any{
+		"session_id":      "sess-envtmpl-01",
+		"hook_event_name": "PreToolUse",
+		"tool_name":       "Read",
+		"tool_input":      map[string]any{"file_path": envPath},
+	})
+	newPath := resp["hookSpecificOutput"].(map[string]any)["updatedInput"].(map[string]any)["file_path"].(string)
+	redacted, err := os.ReadFile(newPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(redacted)
+	// Pattern-matched Stripe key: still caught even in a template.
+	if !strings.Contains(s, "[STRIPE_LIVE_KEY:") {
+		t.Errorf("real Stripe key in .env.example should still be redacted:\n%s", s)
+	}
+	// Short custom token: env-aware-only — must survive in a template.
+	if !strings.Contains(s, "Mk9zPwXr7AqN4bVtC2yLhG") {
+		t.Errorf("short token in .env.example should NOT be redacted (no env-aware pass):\n%s", s)
+	}
+}

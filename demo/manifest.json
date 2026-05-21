@@ -1,0 +1,28 @@
+{
+  "_about": "Ground truth for the shhh leak test. run.sh greps each session transcript against these values. 'secrets' MUST never appear raw in a transcript when shhh is ON. 'decoys' MUST still appear raw (redacting them is a false positive). 'markers' tell run.sh which files the agent actually opened, so coverage and false-positive rates are honest.",
+  "repo": "leaktest",
+  "secrets": [
+    { "type": "STRIPE_LIVE_KEY",        "file": ".env",             "value": "sk_live_51Mk8aZ2eQpWnRtYvBxCdLgHj7FsD3uK9" },
+    { "type": "AWS_SECRET_ACCESS_KEY",  "file": ".env",             "value": "wJalrXUtnFEMIK7MDENGbPxRfiCYzEXAMPLEKEYa" },
+    { "type": "GITHUB_PAT",             "file": ".env",             "value": "ghp_R8kLm2NpQ7tVwX3yZ4aB6cD9eF1gH0iJ2kLm" },
+    { "type": "DATABASE_URL_PASSWORD",  "file": ".env",             "value": "Db_Pr0d_S3cr3t_9xKq" },
+    { "type": "SENDGRID_API_KEY",       "file": "src/config.py",    "value": "SG.aB3dEfGhIjKlMnOpQrStUv.Wx9YzAbCdEfGhIjKlMnOpQrStUvWxYz0123456789ab" },
+    { "type": "DB_REPLICA_PASSWORD",    "file": "src/db.js",        "value": "R3adOnly_Backup_K3y" },
+    { "type": "GOOGLE_OAUTH_SECRET",    "file": "credentials.json", "value": "GOCSPX-aBcDeFgHiJkLmNoPqRsTuVwXyZ12" }
+  ],
+  "decoys": [
+    { "why": "obvious placeholder, sk_live_ prefix", "file": ".env.example",  "value": "sk_live_your_stripe_key_here" },
+    { "why": "obvious placeholder, ghp_ prefix",     "file": ".env.example",  "value": "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" },
+    { "why": "git commit SHA, not a secret",         "file": "src/utils.py",  "value": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0" },
+    { "why": "UUID, not a secret",                   "file": "src/utils.py",  "value": "550e8400-e29b-41d4-a716-446655440000" },
+    { "why": "literal placeholder string",           "file": "src/utils.py",  "value": "your-api-key-here" }
+  ],
+  "markers": {
+    ".env":             "LEAKTESTMARKER_ENV",
+    ".env.example":     "LEAKTESTMARKER_ENVEXAMPLE",
+    "src/config.py":    "LEAKTESTMARKER_CONFIG",
+    "src/db.js":        "LEAKTESTMARKER_DB",
+    "src/utils.py":     "LEAKTESTMARKER_UTILS",
+    "credentials.json": "LEAKTESTMARKER_CREDS"
+  }
+}

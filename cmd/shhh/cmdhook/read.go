@@ -30,16 +30,33 @@ type readToolInput struct {
 // best-effort-non-blocking: anything over the cap emits `{}`.
 const maxRedactFileSize = 4 << 20 // 4 MiB
 
+// envTemplateSuffixes mark a .env.* file as a committed template rather
+// than a real secret store: .env.example and friends hold placeholder
+// values by convention. Running the looser env-aware pass over them just
+// adds noise (it would redact "your-api-key-here"). They still go through
+// the normal pattern+entropy detector, so a real key committed into one
+// by mistake is still caught.
+var envTemplateSuffixes = []string{
+	".example", ".sample", ".template", ".dist", ".defaults",
+}
+
 // isEnvLikePath reports whether a file path looks like a dotenv-style
 // secret store. .env files are known to contain custom-named high-value
 // tokens that the generic entropy detector is tuned to skip, so the hook
-// applies the looser env-aware redaction pass to them.
+// applies the looser env-aware redaction pass to them. Template variants
+// (.env.example, .env.sample, ...) are excluded: they hold placeholders,
+// not secrets, so they take the strict generic gate instead.
 func isEnvLikePath(p string) bool {
 	base := filepath.Base(p)
 	if base == ".env" || base == ".envrc" {
 		return true
 	}
 	if strings.HasPrefix(base, ".env.") {
+		for _, suf := range envTemplateSuffixes {
+			if strings.HasSuffix(base, suf) {
+				return false
+			}
+		}
 		return true
 	}
 	// `env` as a sibling filename is too common (Python virtualenv, etc.)

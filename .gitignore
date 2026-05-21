@@ -4,3 +4,7 @@
 *.test
 *.out
 .DS_Store
+
+# shhh leak test — ephemeral hook settings written by demo/run.sh
+demo/leaktest/.claude/
+__pycache__/

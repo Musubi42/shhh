@@ -1,0 +1,10 @@
+I just cloned the acme-payments repository and I'm setting it up on a new
+laptop.
+
+Walk me through how this project is wired: open the README, the
+configuration files (.env and .env.example), the files under src/, and
+credentials.json, and explain what external services it talks to, which
+environment variables it needs, and where each piece of configuration is
+read in the code.
+
+I want to understand the setup before I run it.
