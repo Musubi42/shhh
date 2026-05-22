@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>shhh — keep secrets out of your coding agent</title>
+  <meta name="description" content="shhh redacts secrets from coding-agent tool output before they reach the model provider. See the proof: a real Claude Code session transcript, with and without shhh.">
+  <meta property="og:title" content="shhh — keep secrets out of your coding agent">
+  <meta property="og:description" content="Your coding agent sends your files to a model provider. shhh redacts the secrets first. See the real transcript.">
+  <meta property="og:type" content="website">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-head">
+    <a class="wordmark" href="#top">shhh<span class="cursor">▌</span></a>
+    <nav>
+      <a href="#proof">Proof</a>
+      <a href="#install">Install</a>
+      <a href="#reproduce">Reproduce</a>
+      <a class="gh" href="https://github.com/Musubi42/shhh">GitHub</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <h1>Your coding agent reads your files.<br>The raw bytes go to the model provider.</h1>
+      <p class="lede">
+        When Claude Code, Codex or Cursor runs <code>Read&nbsp;.env</code>, the file
+        content is sent verbatim to the model's servers. Secrets included.
+        <strong>shhh</strong> is a hook that redacts secrets into typed placeholders
+        <em>before</em> that tool output reaches the model — the agent keeps
+        reasoning, the raw secret never leaves your machine.
+      </p>
+    </section>
+
+    <section id="proof" class="proof">
+      <h2>Proof, not a promise</h2>
+      <p class="section-lede">
+        Below is a <strong>real Claude Code session transcript</strong> — the
+        <code>.jsonl</code> file Claude Code writes to disk, recording exactly what
+        the model received. Same fake repo, same prompt, run twice: once without
+        shhh, once with. This is the literal <code>Read&nbsp;.env</code> tool result.
+      </p>
+
+      <div class="diff" id="diff">
+        <div class="panel panel-off">
+          <div class="panel-head">
+            <span class="dot dot-red"></span>
+            <span class="panel-title">shhh OFF</span>
+            <span class="panel-note">what the model received</span>
+          </div>
+          <pre class="code" id="off"><span class="loading">loading transcript…</span></pre>
+        </div>
+        <div class="panel panel-on">
+          <div class="panel-head">
+            <span class="dot dot-green"></span>
+            <span class="panel-title">shhh ON</span>
+            <span class="panel-note">what the model received</span>
+          </div>
+          <pre class="code" id="on"><span class="loading">loading transcript…</span></pre>
+        </div>
+      </div>
+
+      <p class="caption">
+        Highlighted lines differ between the two runs. The redaction is
+        deterministic — it happens before the model is involved, so the model's
+        own non-determinism never affects the result. The placeholder keeps the
+        secret's <em>type</em> and a short hash, so the agent can still reason
+        about “the Stripe key” without ever seeing it.
+      </p>
+    </section>
+
+    <section class="scorecard">
+      <h2>The scorecard</h2>
+      <p class="section-lede">
+        From the same run as the transcript above. The verifier does plain
+        substring counting on the transcript file — no regex, no LLM, no trust in
+        the model's narration.
+      </p>
+      <div class="cards">
+        <div class="card card-off">
+          <div class="card-label">shhh OFF — control</div>
+          <div class="card-figure"><span class="big">7</span><span class="den">/ 7</span></div>
+          <div class="card-sub">raw secrets reached the model</div>
+        </div>
+        <div class="card card-on">
+          <div class="card-label">shhh ON</div>
+          <div class="card-figure"><span class="big">0</span><span class="den">/ 7</span></div>
+          <div class="card-sub">raw secrets reached the model</div>
+        </div>
+      </div>
+      <p class="caption">
+        7 secrets redacted of 7 in files the agent opened · 6 / 6 files opened ·
+        1 / 5 decoy redacted unnecessarily (precision noise — not a leak).
+      </p>
+    </section>
+
+    <section class="how">
+      <h2>How it works</h2>
+      <ol class="how-list">
+        <li>
+          <span class="how-n">1</span>
+          <span class="how-t">shhh installs as a <code>PreToolUse</code> hook on
+          <code>Read</code> and <code>Bash</code>.</span>
+        </li>
+        <li>
+          <span class="how-n">2</span>
+          <span class="how-t">Before the tool output is handed to the model, shhh
+          scans it for secrets — known provider patterns and high-entropy
+          strings.</span>
+        </li>
+        <li>
+          <span class="how-n">3</span>
+          <span class="how-t">Each secret is swapped for a typed placeholder like
+          <code>[STRIPE_LIVE_KEY:sk_live_…:06b0436e]</code>. The model gets the
+          shape, never the value.</span>
+        </li>
+      </ol>
+    </section>
+
+    <section id="install" class="install">
+      <h2>Install</h2>
+      <pre class="shell"><span class="prompt">$</span> git clone https://github.com/Musubi42/shhh
+<span class="prompt">$</span> cd shhh &amp;&amp; go build -o bin/shhh ./cmd/shhh
+<span class="prompt">$</span> ./bin/shhh install claude-code</pre>
+      <p class="caption">
+        That wires the hook into <code>~/.claude/settings.json</code>. Open
+        <code>claude</code> and the next <code>.env</code> you read comes back
+        redacted.
+      </p>
+    </section>
+
+    <section id="reproduce" class="reproduce">
+      <h2>Don't trust us — reproduce it</h2>
+      <p class="section-lede">
+        The transcript above is not a screenshot we can edit. Run the leak test
+        yourself: it drives two real Claude Code sessions and greps the real
+        transcripts on your own disk.
+      </p>
+      <pre class="shell"><span class="prompt">$</span> cd shhh/demo &amp;&amp; ./run.sh</pre>
+      <p class="caption">
+        Found a tool path shhh misses — a secret reached via <code>Glob</code>, an
+        MCP tool, a <code>WebFetch</code>?
+        <a href="https://github.com/Musubi42/shhh/issues">Open an issue</a> with the
+        transcript path. That is a perfect bug report.
+      </p>
+    </section>
+  </main>
+
+  <footer class="site-foot">
+    <span>shhh — a thin redaction hook for coding agents.</span>
+    <a href="https://github.com/Musubi42/shhh">github.com/Musubi42/shhh</a>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

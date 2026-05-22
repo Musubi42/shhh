@@ -1,0 +1,18 @@
+1	# Payments service — production environment
+2	# LEAKTESTMARKER_ENV
+3	NODE_ENV=production
+4	PORT=8080
+5	
+6	# Stripe — live mode
+7	STRIPE_LIVE_KEY=[STRIPE_LIVE_KEY:sk_live_...:06b0436e]
+8	
+9	# AWS — S3 receipts bucket
+10	AWS_REGION=us-east-1
+11	AWS_SECRET_ACCESS_KEY=[HIGH_ENTROPY:e67355b5]
+12	
+13	# GitHub — CI deploy token
+14	GITHUB_PAT=[GITHUB_PAT:ghp_...:fe9f6c42]
+15	
+16	# Primary database
+17	DATABASE_URL=[POSTGRES_CONNSTRING:payments_app@pg.internal.acme.io:5432/payments:fc4284bd]
+18	
