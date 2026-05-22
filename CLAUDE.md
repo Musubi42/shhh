@@ -103,6 +103,29 @@ See `docs/postmortem-eval-overbuild.md`.
 - `cmd/shhh-eval/`: keeps building for now. Re-decide after
   milestone 1. If it has no user, it goes.
 
+## GitHub push protection — a known repo specificity
+
+shhh is a secret-redaction tool: its fixtures under `testdata/`,
+`eval-corpus/` and `demo/leaktest/` deliberately contain
+secret-shaped values. They are all **fake**. This trips GitHub
+push protection, and there is one non-obvious fact to remember:
+
+- The repo-level toggle (`secret_scanning_push_protection`) is
+  **ineffective** on this public repo — it can read `disabled` and
+  the push is still blocked. Do not waste time toggling it.
+- The only thing that works is **per-secret allowlisting** via the
+  `unblock-secret/...` URLs printed in the `git push` error. The
+  repo owner opens each, marks it "used in tests", and allows it.
+  This is a one-time action per new fixture secret.
+- `.github/secret_scanning.yml` (`paths-ignore`) only silences
+  scanning *alerts*; it does not affect push protection.
+- A history rewrite cannot fix this: fixtures must keep real
+  provider prefixes (`sk_live_`, `ghp_`, …) so shhh emits typed
+  placeholders — the same prefixes GitHub detects. The two
+  patterns overlap by design.
+
+When adding a new fixture secret, expect to allowlist it once.
+
 ## When in doubt
 
 If a decision is not obviously pulling toward the forcing-function
