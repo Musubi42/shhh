@@ -1,0 +1,77 @@
+name: Triage issues
+
+# When an issue is opened, Claude reads it, applies labels, and posts a
+# single transparent triage note with a *suggested* reply for the
+# maintainer to review. It never answers in the maintainer's name and
+# never closes anything — outward replies stay a human decision.
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Triage the issue
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            You are the triage bot for the shhh repository. A new issue
+            was just opened. Triage it — do NOT answer it as if you were
+            the maintainer.
+
+            Issue #${{ github.event.issue.number }}
+            Title: ${{ github.event.issue.title }}
+            Body:
+            ${{ github.event.issue.body }}
+
+            Steps:
+
+            1. Read README.md, demo/README.md and CLAUDE.md in the repo
+               for context on what shhh is and what a good report is.
+
+            2. Classify the issue. Apply labels with `gh` (create a label
+               with `gh label create` if it does not exist yet). Use this
+               set, applying every one that fits:
+                 - leak-report  : claims a secret reached the model with
+                                  shhh on. This is the most important
+                                  class — also add the `priority-high`
+                                  label.
+                 - bug          : shhh misbehaves (crash, over-redaction,
+                                  install problem).
+                 - enhancement  : a feature request.
+                 - question     : a usage question, no defect.
+                 - docs         : documentation gap.
+                 - needs-info   : not enough detail to act (no transcript
+                                  path, no repro, no version).
+
+            3. Post exactly ONE comment on the issue with `gh issue
+               comment`. The comment must be clearly a bot triage note,
+               in this shape:
+
+               > 🔍 **Triage** (automated)
+               >
+               > **Class:** <labels applied>
+               > **Read:** <2-3 sentence summary of what the reporter is
+               > saying and whether it looks actionable>
+               >
+               > <details><summary>Suggested reply — for maintainer
+               > review, not yet sent</summary>
+               >
+               > <a drafted reply the maintainer can copy, edit or
+               > discard. For a leak-report, ask for the transcript path
+               > and the shhh version. Be warm and concise.>
+               > </details>
+
+            Do not close the issue. Do not edit the issue. Do not post
+            more than one comment. The maintainer reads the suggested
+            reply and decides what to actually send.
