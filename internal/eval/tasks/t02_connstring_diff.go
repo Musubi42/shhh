@@ -3,7 +3,7 @@ package tasks
 import (
 	"strings"
 
-	"github.com/musubi-sasu/shhh/internal/eval"
+	"github.com/Musubi42/shhh/internal/eval"
 )
 
 // ConnStringDiff is task 2: an agent is shown two versions of a

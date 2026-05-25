@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/musubi-sasu/shhh/internal/eval"
+	"github.com/Musubi42/shhh/internal/eval"
 )
 
 // PublicCorpus is task 8: false-positive calibration against a corpus of

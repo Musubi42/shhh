@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	auditpkg "github.com/musubi-sasu/shhh/internal/audit"
+	auditpkg "github.com/Musubi42/shhh/internal/audit"
 )
 
 // ruleWidth is the width of the horizontal separator bars.

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/musubi-sasu/shhh/internal/eval"
+	"github.com/Musubi42/shhh/internal/eval"
 )
 
 // JWTDecode is task 1: JWT decode & claims inspection. The agent is given a

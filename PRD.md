@@ -939,7 +939,7 @@ auto_start = true           # Start proxy daemon on `shhh init`
 | **npm global** | `npm i -g shhh` | Persistent installation |
 | **Homebrew** | `brew install shhh` | macOS native |
 | **Curl installer** | `curl -fsSL https://shhh.dev/install.sh \| sh` | Linux servers, CI |
-| **Go install** | `go install github.com/musubi-sasu/shhh@latest` | Go developers |
+| **Go install** | `go install github.com/Musubi42/shhh@latest` | Go developers |
 | **GitHub Releases** | Download binary | Manual install, air-gapped environments |
 
 **Note on npx:** The npm package contains the Go binary for the appropriate platform (similar to how `esbuild` distributes). Alternatively, npx can download the binary on first run.
@@ -1183,7 +1183,7 @@ See `docs/phase-0-eval-suite.md` for the full plan, task catalog, and out-of-sco
 **Goal:** Ship `npx shhh scan .` publicly and simultaneously publish the eval repo with full baseline results. The narrative is "I built a redaction tool and here's how I measured whether it actually works."
 
 **Deliverables (summary):**
-- Public GitHub repos: `musubi-sasu/shhh` (the product) and `musubi-sasu/shhh-eval` (product-agnostic harness, MIT).
+- Public GitHub repos: `Musubi42/shhh` (the product) and `Musubi42/shhh-eval` (product-agnostic harness, MIT).
 - `shhh scan` polished: screenshot-safe default output (`•••` masking), `--show-details` opt-in, JSON + Markdown formats.
 - npm package with platform-specific binary (esbuild-style distribution — budget one week just for this).
 - Homebrew tap and curl installer.
@@ -1264,7 +1264,7 @@ See `docs/phase-5-tui-polish.md`.
 
 **Prioritized by community feedback and eval-revealed needs, not speculation:**
 - `shhh scan --ci` mode for CI/CD (exit code on secrets found).
-- GitHub Action: `musubi-sasu/shhh-action`.
+- GitHub Action: `Musubi42/shhh-action`.
 - VS Code extension (status-bar protection indicator).
 - Team configuration sharing (`.shhh.toml` in repo root with trust model).
 - Pre-commit hook integration.

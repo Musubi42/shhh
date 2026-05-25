@@ -66,6 +66,16 @@ See `docs/postmortem-eval-overbuild.md`.
    These may become real features later, justified by observed
    real-agent need. Until then they do not exist.
 
+   What this rule bans: anything that **runs in the background
+   without the user having just asked for it**. What this rule
+   does NOT ban: short-lived, on-demand subcommands the user
+   explicitly invokes (e.g. a future `shhh serve` that opens a
+   local viewer on `localhost`, serves the redaction log, and dies
+   when the user closes it). The distinction is "background
+   process the user forgot about" vs "subcommand the user just
+   typed." The first is forbidden; the second is fine when it
+   serves the forcing-function scenario.
+
 6. **No speculative work from PRD claims.** The PRD describes a
    finished product. Implement only what the current milestone
    requires, observed against real agents. If the PRD describes

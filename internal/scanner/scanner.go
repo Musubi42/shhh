@@ -13,7 +13,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/musubi-sasu/shhh/internal/detector"
+	"github.com/Musubi42/shhh/internal/detector"
 )
 
 // FileResult is the scan output for a single file.

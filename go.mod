@@ -1,4 +1,4 @@
-module github.com/musubi-sasu/shhh
+module github.com/Musubi42/shhh
 
 go 1.25.7
 

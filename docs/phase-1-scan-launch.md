@@ -35,14 +35,14 @@ The launch narrative that works for both audiences is: **"I built a redaction to
 - [ ] Platform-specific Go binaries for darwin-amd64, darwin-arm64, linux-amd64, linux-arm64, windows-amd64.
 - [ ] npm package using the esbuild-style distribution pattern: a `postinstall` script (or lazy `bin` shim) selects the right binary for the host platform. **Budget one full week for this** — the esbuild pattern is non-trivial and easy to get wrong.
 - [ ] `npx shhh scan .` works end-to-end on all five platforms.
-- [ ] Homebrew tap (`musubi-sasu/tap`) with a `shhh` formula.
+- [ ] Homebrew tap (`Musubi42/tap`) with a `shhh` formula.
 - [ ] Curl installer script at `https://shhh.dev/install.sh` for Linux servers and CI.
-- [ ] `go install github.com/musubi-sasu/shhh@latest` works for Go developers.
+- [ ] `go install github.com/Musubi42/shhh@latest` works for Go developers.
 - [ ] GitHub Releases with signed binaries for manual download.
 
 ### `shhh-eval` publication
 
-- [ ] Repository made public: `musubi-sasu/shhh-eval`.
+- [ ] Repository made public: `Musubi42/shhh-eval`.
 - [ ] MIT license.
 - [ ] `README.md` explaining what the eval measures, what the 40-cell matrix means, and how to run it on a fresh machine.
 - [ ] `make bench` reproduces the full matrix.
@@ -52,7 +52,7 @@ The launch narrative that works for both audiences is: **"I built a redaction to
 
 ### `shhh` repository publication
 
-- [ ] Repository made public: `musubi-sasu/shhh`.
+- [ ] Repository made public: `Musubi42/shhh`.
 - [ ] MIT license.
 - [ ] `README.md` matching the PRD §9.2 structure:
   - [ ] Above-the-fold: name, tagline, one-liner install, masked scan screenshot.

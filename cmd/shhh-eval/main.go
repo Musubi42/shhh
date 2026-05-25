@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/musubi-sasu/shhh/internal/eval"
-	"github.com/musubi-sasu/shhh/internal/eval/tasks"
+	"github.com/Musubi42/shhh/internal/eval"
+	"github.com/Musubi42/shhh/internal/eval/tasks"
 )
 
 func main() {

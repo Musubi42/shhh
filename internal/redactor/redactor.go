@@ -11,8 +11,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/musubi-sasu/shhh/internal/detector"
-	"github.com/musubi-sasu/shhh/internal/session"
+	"github.com/Musubi42/shhh/internal/detector"
+	"github.com/Musubi42/shhh/internal/session"
 )
 
 // Redactor is the stateful pair of (detector, session map) used for one agent

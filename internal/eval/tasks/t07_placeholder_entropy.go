@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/musubi-sasu/shhh/internal/eval"
+	"github.com/Musubi42/shhh/internal/eval"
 )
 
 // PlaceholderEntropy is task 7: placeholder distinguishability. A direct

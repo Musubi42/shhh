@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/musubi-sasu/shhh/internal/detector"
-	"github.com/musubi-sasu/shhh/internal/redactor"
+	"github.com/Musubi42/shhh/internal/detector"
+	"github.com/Musubi42/shhh/internal/redactor"
 )
 
 // readToolInput is the subset of Claude Code's Read tool_input we preserve.

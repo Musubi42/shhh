@@ -14,10 +14,10 @@ import (
 	"io"
 	"os"
 
-	"github.com/musubi-sasu/shhh/cmd/shhh/cmdhook"
-	"github.com/musubi-sasu/shhh/internal/detector"
-	"github.com/musubi-sasu/shhh/internal/redactor"
-	"github.com/musubi-sasu/shhh/internal/session"
+	"github.com/Musubi42/shhh/cmd/shhh/cmdhook"
+	"github.com/Musubi42/shhh/internal/detector"
+	"github.com/Musubi42/shhh/internal/redactor"
+	"github.com/Musubi42/shhh/internal/session"
 )
 
 // Run is the entry point for `shhh redact`.

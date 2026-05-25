@@ -3,7 +3,7 @@ package tasks
 import (
 	"strings"
 
-	"github.com/musubi-sasu/shhh/internal/eval"
+	"github.com/Musubi42/shhh/internal/eval"
 )
 
 // URLMismatch is task 9: agent is shown two URLs and asked whether

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/musubi-sasu/shhh/internal/detector"
+	"github.com/Musubi42/shhh/internal/detector"
 )
 
 func TestIsSensitive(t *testing.T) {

@@ -12,9 +12,9 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"github.com/musubi-sasu/shhh/internal/detector"
-	"github.com/musubi-sasu/shhh/internal/redactor"
-	"github.com/musubi-sasu/shhh/internal/session"
+	"github.com/Musubi42/shhh/internal/detector"
+	"github.com/Musubi42/shhh/internal/redactor"
+	"github.com/Musubi42/shhh/internal/session"
 )
 
 // sessionIDRe guards the session_id before we use it as a filename. Claude

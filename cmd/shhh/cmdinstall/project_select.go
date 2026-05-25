@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	auditpkg "github.com/musubi-sasu/shhh/internal/audit"
+	auditpkg "github.com/Musubi42/shhh/internal/audit"
 )
 
 // ClaudeProject is the TUI-facing description of one Claude Code

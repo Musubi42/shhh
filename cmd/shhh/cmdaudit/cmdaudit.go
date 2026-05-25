@@ -22,7 +22,7 @@ import (
 	"runtime"
 	"syscall"
 
-	auditpkg "github.com/musubi-sasu/shhh/internal/audit"
+	auditpkg "github.com/Musubi42/shhh/internal/audit"
 )
 
 // Run is the entry point for `shhh audit [flags]`. Returns an error

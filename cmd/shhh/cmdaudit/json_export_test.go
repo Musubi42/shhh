@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	auditpkg "github.com/musubi-sasu/shhh/internal/audit"
+	auditpkg "github.com/Musubi42/shhh/internal/audit"
 )
 
 func TestRenderJSONShape(t *testing.T) {

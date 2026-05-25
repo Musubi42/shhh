@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/musubi-sasu/shhh/internal/eval"
+	"github.com/Musubi42/shhh/internal/eval"
 )
 
 // GrepHardcoded is task 5: can the agent find *new* occurrences of a

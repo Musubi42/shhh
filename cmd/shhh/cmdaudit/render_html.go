@@ -32,7 +32,7 @@ import (
 	"strings"
 	"time"
 
-	auditpkg "github.com/musubi-sasu/shhh/internal/audit"
+	auditpkg "github.com/Musubi42/shhh/internal/audit"
 )
 
 //go:embed templates/*.tmpl

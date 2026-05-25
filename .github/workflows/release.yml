@@ -1,0 +1,41 @@
+name: Release
+
+# Cuts a release whenever a v* tag is pushed. goreleaser builds the
+# matrix and uploads archives + checksums to GitHub Releases.
+#
+# No extra secrets required — only the default GITHUB_TOKEN. A
+# Homebrew tap step can be added later by re-enabling the `brews:`
+# block in .goreleaser.yaml and adding a HOMEBREW_TAP_TOKEN secret.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Run tests
+        run: go test ./... -count=1
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

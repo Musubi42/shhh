@@ -11,8 +11,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/musubi-sasu/shhh/internal/detector"
-	"github.com/musubi-sasu/shhh/internal/scanner"
+	"github.com/Musubi42/shhh/internal/detector"
+	"github.com/Musubi42/shhh/internal/scanner"
 )
 
 // Run is the entry point for `shhh scan`.

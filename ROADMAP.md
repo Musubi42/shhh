@@ -12,11 +12,20 @@ Everything below them is contingent on the friction surface shrinking
 enough that a user on a monorepo is willing to keep the hook installed
 for a full day.
 
+**Status update (2026-05-25):** the Read→Edit cascade described in
+item 1 has been substantially reduced by subsequent fixes — the
+"every retry re-fails" cycle no longer reproduces consistently.
+Residual rough edges remain (see notes below the prompt) but the
+project is no longer blocked on this from a distribution standpoint.
+Item 2 (detection FPs) is still open and is the next quality lever.
+
 ---
 
 ## 1. Fix the Read→Edit ledger bug
 
-**Status:** blocker. This is the single biggest friction source today.
+**Status:** largely resolved as of 2026-05-25. Kept here for the
+historical reproduction and prompt context — useful if a regression
+ever shows up.
 
 **Problem:** When the hook rewrites `updatedInput.file_path` to a cache
 location, Claude Code's internal Read-ledger records the cache path,

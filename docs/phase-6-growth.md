@@ -26,7 +26,7 @@ Every Phase 6 deliverable must clear two gates: **"does a real user want this?"*
 ### CI and automation
 
 - [ ] `shhh scan --ci` mode: machine-readable output, exit code 1 on secrets found, configurable severity gates.
-- [ ] GitHub Action: `musubi-sasu/shhh-action` — runs `shhh scan` on PR diffs and comments with findings.
+- [ ] GitHub Action: `Musubi42/shhh-action` — runs `shhh scan` on PR diffs and comments with findings.
 - [ ] Pre-commit hook integration: a `shhh pre-commit` subcommand that can be dropped into `.pre-commit-config.yaml` or `husky`.
 - [ ] GitLab CI template.
 - [ ] Circle CI / Buildkite orbs.

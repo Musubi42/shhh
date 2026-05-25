@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/musubi-sasu/shhh/internal/detector"
-	"github.com/musubi-sasu/shhh/internal/session"
+	"github.com/Musubi42/shhh/internal/detector"
+	"github.com/Musubi42/shhh/internal/session"
 )
 
 func newEnvRedactor() *Redactor {

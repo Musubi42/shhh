@@ -17,7 +17,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/musubi-sasu/shhh/internal/rules"
+	"github.com/Musubi42/shhh/internal/rules"
 )
 
 // Finding is a single detected secret with enough context to label it.

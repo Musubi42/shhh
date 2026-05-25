@@ -7,11 +7,11 @@ import (
 	"io"
 	"os"
 
-	"github.com/musubi-sasu/shhh/cmd/shhh/cmdaudit"
-	"github.com/musubi-sasu/shhh/cmd/shhh/cmdhook"
-	"github.com/musubi-sasu/shhh/cmd/shhh/cmdinstall"
-	"github.com/musubi-sasu/shhh/cmd/shhh/cmdredact"
-	"github.com/musubi-sasu/shhh/cmd/shhh/cmdscan"
+	"github.com/Musubi42/shhh/cmd/shhh/cmdaudit"
+	"github.com/Musubi42/shhh/cmd/shhh/cmdhook"
+	"github.com/Musubi42/shhh/cmd/shhh/cmdinstall"
+	"github.com/Musubi42/shhh/cmd/shhh/cmdredact"
+	"github.com/Musubi42/shhh/cmd/shhh/cmdscan"
 )
 
 // init wires the installer's scan hook to the real cmdscan. Kept out

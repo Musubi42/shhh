@@ -5,7 +5,7 @@ import (
 	"io"
 	"time"
 
-	auditpkg "github.com/musubi-sasu/shhh/internal/audit"
+	auditpkg "github.com/Musubi42/shhh/internal/audit"
 )
 
 // JSON DTO structs. We never marshal auditpkg types directly; the

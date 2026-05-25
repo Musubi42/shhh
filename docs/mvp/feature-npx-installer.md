@@ -214,7 +214,7 @@ actually destroys work we've already done.
 ### Option C: No NPX, use `go install` or Homebrew
 
 **How it works:** ship only a Go binary. Users run `go install
-github.com/musubi-sasu/shhh/cmd/shhh@latest` or `brew install shhh`.
+github.com/Musubi42/shhh/cmd/shhh@latest` or `brew install shhh`.
 
 **Pros:** zero new infrastructure.
 
