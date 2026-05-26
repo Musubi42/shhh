@@ -2,11 +2,12 @@
 
 > Stop leaking secrets to AI coding agents.
 
-`shhh` is a thin local hook that drops into your coding agent (Claude
-Code, Codex, Cursor) and redacts secrets — API keys, tokens,
-connection strings — **before** they reach the LLM. The agent sees
-typed placeholders and can keep reasoning. The raw secret never
-leaves your machine.
+When Claude Code, Codex, or Cursor runs `Read .env`, the file
+content is sent verbatim to the model provider. Secrets included.
+
+`shhh` is a local hook that swaps each secret for a typed
+placeholder **before** the tool output reaches the model. The
+agent keeps reasoning. The raw value never leaves your machine.
 
 ```
 $ shhh install claude-code
@@ -16,13 +17,32 @@ claude> read .env
   # Not the raw key. Ever.
 ```
 
+> Live demo (real Claude Code transcript, shhh off vs on):
+> [**musubi42.github.io/shhh**](https://musubi42.github.io/shhh/)
+> · Hero recording: `assets/hero.tape` (run `vhs assets/hero.tape`
+> to generate `assets/hero.gif`).
+
+---
+
+## Wait — Claude has probably already seen some
+
+```sh
+shhh audit
+```
+
+`shhh audit` reads `~/.claude/projects/` — Claude Code's own
+session transcripts on your disk — and reports every secret that
+has already left your machine. Most users find between 5 and 50.
+None of them is fun to rotate.
+
+Run it once before you install the hook. The number is what
+convinces you to keep the hook on.
+
 ---
 
 ## Install
 
 Pick one. All paths land the same `shhh` binary on your `$PATH`.
-
-### Native install (recommended)
 
 **macOS, Linux, WSL**
 
@@ -36,25 +56,25 @@ curl -fsSL https://musubi42.github.io/shhh/install.sh | sh
 irm https://musubi42.github.io/shhh/install.ps1 | iex
 ```
 
-The script detects your OS/arch, fetches the latest release from
-GitHub, verifies the SHA-256 checksum, and installs to
-`/usr/local/bin` (falls back to `~/.local/bin` if not writable) on
-Unix, or `%LOCALAPPDATA%\Programs\shhh` on Windows. Override either
-with `SHHH_INSTALL=/some/path`.
-
-### Go
+**Go**
 
 ```sh
 go install github.com/Musubi42/shhh/cmd/shhh@latest
 ```
 
-### Manual
+**Manual**
 
 Grab the archive for your platform from the
 [releases page](https://github.com/Musubi42/shhh/releases/latest),
-verify the checksum, extract `shhh`, drop it on your `$PATH`.
+verify the checksum, drop `shhh` on your `$PATH`.
 
-> Homebrew tap coming in a future release.
+The script detects OS/arch, fetches the latest release, verifies
+SHA-256, and installs to `/usr/local/bin` (falls back to
+`~/.local/bin`) on Unix, or `%LOCALAPPDATA%\Programs\shhh` on
+Windows. Override with `SHHH_INSTALL=/some/path`.
+
+> Homebrew tap is intentionally deferred until the launch post
+> brings real user demand.
 
 ---
 
@@ -63,26 +83,23 @@ verify the checksum, extract `shhh`, drop it on your `$PATH`.
 ```sh
 shhh install claude-code     # writes a hook into ~/.claude/settings.json
 shhh install                 # interactive picker (recommended on first run)
-shhh uninstall claude-code   # clean removal of the hook entry
+shhh uninstall claude-code   # clean removal
 ```
 
-`shhh install` picks the detection engines for you (default:
-`gitleaks`, shipping ~222 MIT-licensed rules) or lets you compose:
+shhh ships with two detection engines:
+
+- **gitleaks** (default) — maintained third-party MIT engine,
+  ~222 provider rules, curated path allowlist (lockfiles, vendor,
+  binaries skipped).
+- **shhh-native** — first-party additive layer. Adds env
+  cross-reference ("value defined in `.env` found copy-pasted in
+  code") and structural URL handling
+  (`[POSTGRES_CONNSTRING:user@host/db:d22dea72]` keeps host/db
+  visible, redacts creds).
 
 ```sh
 shhh install claude-code --engines gitleaks,shhh-native
 ```
-
-- **gitleaks** is the default. Maintained third-party rules, MIT,
-  curated path allowlist (lockfiles, vendor, binaries skipped).
-- **shhh-native** is the first-party engine. Adds env
-  cross-reference ("value defined in `.env` found copy-pasted in
-  code") and structural URL handling
-  (`postgres://user:pwd@host/db` → host/db stay visible, creds
-  redacted). Use it alongside gitleaks for max coverage.
-
-Pick one or both. See [`docs/engine-architecture.md`](docs/engine-architecture.md)
-for the full design.
 
 Codex and Cursor support are scoped in
 [`docs/ready-to-publish/04-codex-support.md`](docs/ready-to-publish/04-codex-support.md)
@@ -91,32 +108,68 @@ and
 
 ---
 
+## See what shhh is doing
+
+```sh
+shhh scan .              # every secret-shaped value in this directory
+shhh audit               # forensic audit of Claude history (the hook above)
+shhh bench .             # compare detection engines on this content
+shhh ignore list         # active .shhhignore cascade + gitleaks defaults
+shhh ignore check <path> # explain which layer decides a given path
+shhh licenses            # shhh + third-party MIT notices
+```
+
+The hook prints a one-line trailer after each redacted tool call,
+so you always see what was caught:
+
+```
+--- shhh redacted 1 secret from this command's output. ---
+  - STRIPE_LIVE_KEY at output line 23
+    placeholder: [STRIPE_LIVE_KEY:sk_live_...:b4135099]
+```
+
+---
+
+## Trust
+
+`shhh` runs entirely **locally**. No network calls. No daemon.
+No telemetry. No external service. One Go binary the agent
+shells out to on each tool call. MIT-licensed; `shhh licenses`
+prints every third-party notice (gitleaks v8.30.1 MIT included).
+
+Reproduce the redaction proof end-to-end on your own disk:
+
+```sh
+git clone https://github.com/Musubi42/shhh
+cd shhh/demo && ./run.sh
+```
+
+`run.sh` drives two real Claude Code sessions and greps the
+real `.jsonl` transcripts — the bytes the model actually
+received. No screenshots to argue with.
+
+---
+
 ## Known limitations
 
-After shhh redacts a file, Claude Code's `Edit` and `Write` tools
-fail on that file for the rest of the session with `File has not
-been read yet`. This is a limitation of the Claude Code hook API,
-not a bug in shhh — the hook rewrites the Read's `file_path` to a
-redacted cache copy, and Claude Code's internal Read-ledger
-records the cache path rather than the original. Three
-hook-API strategies for fixing it have been evaluated and ruled
-out (see [`docs/design/read-edit-tracking.md`](docs/design/read-edit-tracking.md)).
+After shhh redacts a file, Claude Code's `Edit` and `Write`
+tools fail on that file for the rest of the session with `File
+has not been read yet`. This is a limitation of the Claude Code
+hook API, not a bug in shhh — see
+[`docs/design/read-edit-tracking.md`](docs/design/read-edit-tracking.md)
+for the three hook-API strategies that were evaluated and ruled
+out.
 
-**Workaround:** modify redacted files via the `Bash` tool
-(`sed -i`, `tee`, `printf >>`, `python -c`, …). The hook narrates
-this guidance to Claude automatically on every redacted Read, so
-in practice Claude reaches for `Bash` directly and you do not see
-the `Edit` failure. Bash output is also redacted, so this path
-stays safe.
-
-Full repro and the list of strategies considered:
+**Workaround:** the hook tells Claude to use the `Bash` tool
+(`sed -i`, `tee`, `printf >>`, `python -c`, …) on any file shhh
+just redacted. In practice Claude reaches for `Bash` directly
+and you never see the `Edit` failure. Bash output is also
+redacted, so this stays safe. Full repro:
 [`docs/known-limitations.md`](docs/known-limitations.md).
 
 ---
 
 ## Uninstall
-
-To remove shhh entirely (binary + cache + Claude Code hook):
 
 **macOS, Linux, WSL**
 
@@ -130,8 +183,8 @@ curl -fsSL https://musubi42.github.io/shhh/uninstall.sh | sh
 irm https://musubi42.github.io/shhh/uninstall.ps1 | iex
 ```
 
-The script detaches shhh from Claude Code, removes the binary, and
-deletes `~/.shhh` (session cache + audit log).
+Detaches shhh from Claude Code, removes the binary, and deletes
+`~/.shhh` (session cache + audit log).
 
 To keep the cache and audit history, pass `SHHH_KEEP_DATA=1`
 *after* the pipe (so it lands in the shell that runs the script,
@@ -141,48 +194,9 @@ not in `curl`'s environment):
 curl -fsSL https://musubi42.github.io/shhh/uninstall.sh | SHHH_KEEP_DATA=1 sh
 ```
 
-PowerShell users: `$env:SHHH_KEEP_DATA = '1'` before running `irm`.
+PowerShell: `$env:SHHH_KEEP_DATA = '1'` before running `irm`.
 
 Installed via `go install`? Also `rm $(go env GOPATH)/bin/shhh`.
-
----
-
-## See what shhh is doing
-
-```sh
-shhh scan .              # list every secret-shaped value in this directory
-shhh audit               # forensic audit of what Claude has seen so far
-shhh bench .             # compare detection engines on this content
-shhh ignore list         # show the active .shhhignore cascade + gitleaks defaults
-shhh ignore check <path> # explain which layer decides a given path
-shhh licenses            # print shhh + third-party MIT notices
-```
-
-The hook also prints a one-line trailer after each tool call it
-redacted, so you always see what was caught:
-
-```
---- shhh (local secret-redaction tool) redacted 1 secret from this command's output. ---
-  - STRIPE_LIVE_KEY at output line 23 (placeholder: [STRIPE_LIVE_KEY:sk_live_...:b4135099])
-```
-
----
-
-## Why this exists
-
-Coding agents stream your files and shell output to an LLM provider.
-That stream includes whatever happens to be in your `.env`, your
-shell history, your `git diff`. Once a secret leaves the machine, it
-has left the machine — rotating it is the only fix.
-
-`shhh` runs entirely locally. No network calls. No daemon. No
-external service. It's a single Go binary the agent shells out to
-on each tool call.
-
-For the full design rationale see [`PRD.md`](PRD.md) §§1, 2, 5, 6, 8.
-The current engine architecture (gitleaks + shhh-native + layered
-`.shhhignore`) is documented in
-[`docs/engine-architecture.md`](docs/engine-architecture.md).
 
 ---
 
@@ -194,11 +208,15 @@ make test     # full test suite
 make demo     # end-to-end hook smoke test
 ```
 
-Repo guides:
+Guides:
 
-- [`CLAUDE.md`](CLAUDE.md) — operating instructions for any AI agent (and humans) working in this repo.
-- [`docs/implementation-roadmap.md`](docs/implementation-roadmap.md) — milestone list.
-- [`ROADMAP.md`](ROADMAP.md) — current friction issues found during dogfooding.
+- [`CLAUDE.md`](CLAUDE.md) — operating instructions for any AI
+  agent (and humans) working in this repo.
+- [`PRD.md`](PRD.md) §§1, 2, 5, 6, 8 — the product vision.
+- [`docs/engine-architecture.md`](docs/engine-architecture.md) —
+  the gitleaks + shhh-native + `.shhhignore` design.
+- [`ROADMAP.md`](ROADMAP.md) — current friction items from
+  dogfooding.
 
 ---
 
