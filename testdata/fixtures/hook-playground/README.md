@@ -78,13 +78,29 @@ Read(/Users/musubi42/Documents/Musubi42/shhh/testdata/fixtures/hook-playground/.
 **Prompt:**
 > Read `.env`, then add a new line `FEATURE_FLAG_NEW_UI=true` at the end.
 
-**Expected (after fix):**
-- Claude's Edit call succeeds on the first try.
+**Status (2026-05-26): documented limit, not a fix target.**
+This fixture remains the canonical repro for the Read→Edit
+ledger limit. Option D shipped instead of a code fix — see
+`docs/known-limitations.md` and the design doc
+`docs/design/read-edit-tracking.md` for why the three viable
+hook-API strategies are impossible. The `narrateRedactions`
+output now tells Claude to use `Bash` (sed -i, tee, printf >>,
+python -c) directly on any redacted file, so a *fresh* run of
+this test should see Claude reach for `Bash` on the first try
+without two failed `Edit` attempts.
 
-**Currently fails with:** `Error: File must be read first` on Edit,
-because the hook rewrites `updatedInput.file_path` to a cache path and
-Claude Code's internal Read-ledger records the cache path, not `.env`.
-This is the blocker we're fixing.
+**Option D outcome to look for in a fresh transcript:**
+- Read on `.env` produces the redaction narration with the
+  "use Bash" guidance.
+- The next write is a `Bash` call (sed / tee / printf), NOT a
+  failed `Edit` retry loop.
+- The original "File has not been read yet" error block should
+  disappear from the transcript entirely.
+
+The RESULTS block below predates the `narrateRedactions` Bash
+nudge — it shows the *old* failure mode (two failed Edits, then
+Claude reaching for Bash on its own). Replace with a new
+transcript on the next interactive dryrun.
 
 RESULTS : 
 Read(/Users/musubi42/Documents/Musubi42/shhh/testdata/fixtures/hook-playground/leaky-project/.

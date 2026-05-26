@@ -91,6 +91,29 @@ and
 
 ---
 
+## Known limitations
+
+After shhh redacts a file, Claude Code's `Edit` and `Write` tools
+fail on that file for the rest of the session with `File has not
+been read yet`. This is a limitation of the Claude Code hook API,
+not a bug in shhh — the hook rewrites the Read's `file_path` to a
+redacted cache copy, and Claude Code's internal Read-ledger
+records the cache path rather than the original. Three
+hook-API strategies for fixing it have been evaluated and ruled
+out (see [`docs/design/read-edit-tracking.md`](docs/design/read-edit-tracking.md)).
+
+**Workaround:** modify redacted files via the `Bash` tool
+(`sed -i`, `tee`, `printf >>`, `python -c`, …). The hook narrates
+this guidance to Claude automatically on every redacted Read, so
+in practice Claude reaches for `Bash` directly and you do not see
+the `Edit` failure. Bash output is also redacted, so this path
+stays safe.
+
+Full repro and the list of strategies considered:
+[`docs/known-limitations.md`](docs/known-limitations.md).
+
+---
+
 ## Uninstall
 
 To remove shhh entirely (binary + cache + Claude Code hook):

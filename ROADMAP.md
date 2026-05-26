@@ -21,14 +21,18 @@ Everything below them is contingent on the friction surface shrinking
 enough that a user on a monorepo is willing to keep the hook installed
 for a full day.
 
-**Status update (2026-05-26):** items 1 and 2 are now both in a
-landed state. Item 1 (Read→Edit cascade) has been substantially
-reduced since 2026-05-25; item 2 (detection engine replacement)
-shipped as a 4-commit refactor on 2026-05-26 — see the engine
-redesign section below. The remaining quality levers are item 3
-(intentional-fixture bypass — split into the now-shipped detector
-skip-list and the still-future hook bypass), item 4 (narration
-compression, contingent on item 1), and item 5 (cache scoping).
+**Status update (2026-05-26):** items 1, 2, and 4 are now in a
+landed state. Item 1 (Read→Edit cascade) closed via option D from
+[`docs/ready-to-publish/01-kill-read-edit-ledger-bug.md`](docs/ready-to-publish/01-kill-read-edit-ledger-bug.md):
+the limit is honestly documented in `README.md` and
+`docs/known-limitations.md`, and the hook narration already steers
+Claude to `Bash` on redacted files. Item 2 (detection engine
+replacement) shipped as a 4-commit refactor — see the engine
+redesign section below. Item 4 (narration compression) closed as
+wont-fix because the "use Bash" block IS the user-facing fix
+under option D. The remaining quality levers are item 3
+(intentional-fixture bypass — detector skip-list shipped, hook
+bypass still future) and item 5 (cache scoping).
 
 ---
 
@@ -430,68 +434,36 @@ dry-run. All shipped, all on `main`, `make test` green. See
 
 ## 1. Fix the Read→Edit ledger bug
 
-**Status:** largely resolved as of 2026-05-25. Kept here for the
-historical reproduction and prompt context — useful if a regression
-ever shows up.
+**Status: CLOSED — option D shipped 2026-05-26.** Three hook-API
+strategies for an actual fix (Strategy A: replace tool result in
+`PostToolUse/Read`; Strategy B: synthetic result from
+`PreToolUse/Read`; Strategy C: inject ledger state from a hook)
+were all ruled out as impossible against the current Claude Code
+hook API. See [`docs/design/read-edit-tracking.md`](docs/design/read-edit-tracking.md)
+for the permanent record.
 
-**Problem:** When the hook rewrites `updatedInput.file_path` to a cache
-location, Claude Code's internal Read-ledger records the cache path,
-not the original. The next Edit/Write on the original path fails with
-`File has not been read yet` and there is no way to retry cleanly —
-every retry re-enters the hook, which re-rewrites, which re-fails.
+The shipped resolution is option D from
+[`docs/ready-to-publish/01-kill-read-edit-ledger-bug.md`](docs/ready-to-publish/01-kill-read-edit-ledger-bug.md):
+honest public documentation of the limit. Concretely:
 
-**Evidence:** Test 2 in
-`testdata/fixtures/hook-playground/README.md` is the reproduction.
-Entry 13 in `docs/implementation-log.md` documents how this cascaded
-during the visibility-feature session (3 separate files could not be
-edited; I had to patch them via `python3` from the Bash tool).
+- `cmd/shhh/cmdhook/read.go::narrateRedactions` already tells
+  Claude to use `Bash` (`sed -i`, `tee`, `python -c`, …) on any
+  file shhh just redacted. In practice Claude reaches for Bash
+  directly and never hits the "File has not been read yet" error
+  on its first try.
+- `README.md` now has a top-level "Known limitations" section
+  setting first-time-user expectations before the surprise.
+- [`docs/known-limitations.md`](docs/known-limitations.md) is the
+  user-facing full repro + the strategies considered, linked from
+  the README.
+- A GitHub tracking issue captures the affected `claude --version`
+  range so the entry becomes auto-discoverable when Anthropic
+  ships either `PostToolUse.updatedOutput` for built-in tools or a
+  `markFileAsRead` side-effect.
 
-**Why it matters more than new features:** on a monorepo, the
-"non-editable" surface grows monotonically over a session. After
-~20 minutes of work, any file that ever held a detectable token is
-dead to the Edit tool, regardless of whether the token was real.
-
-**Prompt for the next session:**
-
-> Fix the Read→Edit ledger bug in shhh's Claude Code hook.
->
-> Read first:
->   1. `CLAUDE.md` — hard rules.
->   2. `testdata/fixtures/hook-playground/README.md` Test 2 — the
->      reproduction. The "RESULTS" block shows the cascade.
->   3. `docs/design/read-edit-tracking.md` — prior design notes on
->      this area; contains context on the Bash-fallback workaround
->      that was shipped instead of a real fix.
->   4. `cmd/shhh/cmdhook/read.go` — the PreToolUse handler that
->      rewrites `updatedInput.file_path`. This is where the bug is
->      introduced.
->   5. `docs/implementation-log.md` Entry 13 — describes how the
->      ledger bug cascaded during the visibility work, including the
->      python-via-Bash workaround.
->
-> The fix needs to make `Edit` and `Write` work on their first try
-> against the ORIGINAL file path after a redacted Read, with no
-> retry loop and no user-visible error. Likely strategies to
-> evaluate (not prescribe — investigate first):
->
->   - PostToolUse hook that fires a silent ledger entry for the
->     original path after Read completes
->   - Instead of rewriting `file_path`, inject the redacted content
->     via `additionalContext` and leave `file_path` pointing at the
->     original (costs more context tokens, but fixes the ledger)
->   - Symlink-based cache (original path → cache) rather than a
->     different path (may not work depending on how Claude Code's
->     ledger canonicalizes paths)
->
-> Hard constraint: the fix must NOT disable redaction on files that
-> fail to edit cleanly — silently letting secrets through is worse
-> than a noisy workaround.
->
-> Acceptance test: re-run Test 2 in hook-playground/README.md. It
-> should succeed on the first Edit call, with no Bash fallback.
-> Paste the new transcript under the Test 2 RESULTS section.
-
----
+This item flips back to OPEN only if Claude Code introduces a new
+hook field that makes Strategy A or a ledger-mutation route
+possible.
 
 ## 2. Replace the detection engine
 
@@ -670,34 +642,21 @@ developer to say "I know, this is fine."
 ## 4. Compress the narration; make "IMPORTANT — how to modify this file"
    conditional
 
-**Status:** blocked on item 1. If the Read→Edit ledger bug is fixed,
-the 8-line "use Bash instead" block in the narration becomes
-obsolete and can be deleted. Doing this before the ledger fix is
-backwards.
+**Status: CLOSED as wont-fix under item 1's option-D shipment
+(2026-05-26).** This item was blocked on item 1 being fixed. Item
+1 instead closed via option D: the limit is now documented
+publicly and the narration's "use Bash instead" block stays —
+that text IS the user-facing fix. Removing it would re-introduce
+the silent failure mode that option D set out to prevent.
 
-**Prompt for the next session:**
+Reopen only if Claude Code exposes a hook field that makes the
+ledger-bridging fix (Strategy A or equivalent) viable; at that
+point both item 1 and item 4 flip back to OPEN simultaneously.
 
-> After the Read→Edit ledger bug is fixed, sweep
-> `cmd/shhh/cmdhook/read.go::narrateRedactions` and
-> `cmd/shhh/cmdredact/cmdredact.go::buildBashNarration` for text
-> that described the workaround. Anything of the form "Edit and
-> Write will fail, use Bash instead" should be deleted. Keep the
-> per-finding listing and the "shhh protected N secrets" opener;
-> those remain useful.
->
-> Read first:
->   1. `cmd/shhh/cmdhook/read.go` — the current narration function.
->   2. `cmd/shhh/cmdhook/cmdhook_test.go` — the narration tests.
->      The test that asserts "use Bash instead" appears in the
->      narration needs to flip to asserting that it DOES NOT appear.
->
-> Also consider: on a long session, the narration repeats the same
-> framing block N times. Investigate whether Claude Code's hook API
-> exposes a "has this session already seen narration X" signal. If
-> not, ship the first iteration unchanged and note in the commit
-> message that session-aware narration compression is deferred.
-
----
+Possible follow-up unrelated to item 1: session-aware compression
+(skip repeating the same framing block when the same session has
+already seen it). This would need a hook API signal that does not
+exist today, so it stays parked.
 
 ## 5. Smarter session scoping for the redaction cache
 
