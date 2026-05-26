@@ -13,6 +13,20 @@ const stripeKey = "sk_live_4eC39HqLyjWDarjtT1zdp7dc"
 
 func runClaude(t *testing.T, payload any) map[string]any {
 	t.Helper()
+	// Tests assert against shhh-native semantics (env-pass gate,
+	// HIGH_ENTROPY threshold). Isolate the subprocess from the
+	// developer's real ~/.shhh/config.json by pointing it at a
+	// throwaway config dir that pins engines to shhh-native.
+	// Tests that need a different engine set their own
+	// SHHH_CONFIG_DIR before calling runClaude.
+	if os.Getenv("SHHH_CONFIG_DIR") == "" {
+		cfgDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(cfgDir, "config.json"),
+			[]byte(`{"version":1,"engines":["shhh-native"]}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("SHHH_CONFIG_DIR", cfgDir)
+	}
 	in, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatal(err)

@@ -28,6 +28,23 @@ type Config struct {
 	Paths            []string `json:"installed_paths"`   // absolute settings.json paths touched
 	SelectedProjects []string `json:"selected_projects"` // per-agent project dash-names to audit; empty = all
 	IgnoredPaths     []string `json:"ignored_paths,omitempty"` // absolute project paths to skip in `shhh audit`
+	// Engines is the ordered list of detection engines the hook +
+	// scan + audit should drive. Order matters: when two engines
+	// flag the same span, the first one wins for label attribution.
+	// Empty means "use the default" (currently ["gitleaks"]).
+	Engines []string `json:"engines,omitempty"`
+}
+
+// EffectiveEngines returns Engines if set, else the default selection
+// ([]string{"gitleaks"}). Always returns a non-empty slice so callers
+// can drive `detector.NewFromConfig` without an empty check.
+func (c *Config) EffectiveEngines() []string {
+	if c == nil || len(c.Engines) == 0 {
+		return []string{"gitleaks"}
+	}
+	out := make([]string, len(c.Engines))
+	copy(out, c.Engines)
+	return out
 }
 
 // ConfigPath returns the absolute path to the shhh user config file.

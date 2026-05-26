@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/Musubi42/shhh/internal/detector"
+	"github.com/Musubi42/shhh/internal/ignore"
 )
 
 // FileResult is the scan output for a single file.
@@ -31,6 +32,11 @@ type Scanner struct {
 	sensitiveName map[string]struct{}
 	sensitiveExt  map[string]struct{}
 	sensitiveGlob []string
+	// ignoreMatcher is the layered ignore evaluator. When set, the
+	// walker consults it for every file path (relative to scan root)
+	// and skips paths the matcher reports as Ignored. nil = no-op.
+	// See internal/ignore for the layered semantics.
+	ignoreMatcher *ignore.LayeredMatcher
 }
 
 // envValueChecker is the optional capability the shhh-native detector
@@ -54,8 +60,10 @@ func checkEnvValue(d detector.Backend, value string) bool {
 }
 
 // New returns a scanner with default patterns. Accepts any
-// `detector.Backend` — typically `detector.NewFromEnv()` from
-// callers that want SHHH_DETECTOR honoured.
+// `detector.Backend`; callers obtain one via
+// `detector.NewFromConfig(cfg.EffectiveEngines())` or by
+// composing engines directly. Use `WithIgnoreMatcher` to plug a
+// `.shhhignore` evaluator onto the returned scanner.
 func New(det detector.Backend) *Scanner {
 	return &Scanner{
 		det:          det,
@@ -80,6 +88,16 @@ func New(det detector.Backend) *Scanner {
 			"*secret*", "*credential*",
 		},
 	}
+}
+
+// WithIgnoreMatcher attaches a layered ignore evaluator to the
+// scanner. Paths the matcher reports as Ignored are skipped
+// during Scan (and during the env-value collection pass). Passing
+// nil clears any previously-set matcher. Returns the scanner for
+// fluent composition.
+func (s *Scanner) WithIgnoreMatcher(m *ignore.LayeredMatcher) *Scanner {
+	s.ignoreMatcher = m
+	return s
 }
 
 // IsSensitive reports whether a file path should be treated as sensitive for
@@ -123,6 +141,20 @@ func (s *Scanner) Scan(root string) ([]FileResult, error) {
 	var out []FileResult
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
+			return nil
+		}
+		// Consult the user `.shhhignore` + gitleaks defaults early
+		// so an ignored directory short-circuits the walk before we
+		// stat its contents. The relative-to-root path is what
+		// gitignore-style matchers expect.
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			rel = path
+		}
+		if s.ignoreMatcher != nil && rel != "." && s.ignoreMatcher.IsIgnored(rel) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if d.IsDir() {

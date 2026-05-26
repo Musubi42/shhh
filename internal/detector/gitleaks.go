@@ -2,6 +2,7 @@ package detector
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	gitleaksconfig "github.com/zricethezav/gitleaks/v8/config"
@@ -155,6 +156,29 @@ func derivePublicPrefix(match string) string {
 		return match[:4]
 	}
 	return match
+}
+
+// GitleaksDefaultAllowlistPaths returns the compiled path-regex
+// allowlist that ships with the embedded gitleaks default config.
+// `internal/ignore` uses this as its first layer so the
+// `.shhhignore` cascade starts from the same lockfile/vendor/
+// binary baseline as gitleaks itself — keeping shhh-native
+// scanning aligned with gitleaks even when gitleaks isn't in the
+// user's engine selection. See docs/engine-architecture.md §2.3.
+//
+// Returns nil + nil if the gitleaks detector fails to construct
+// (rare). Callers should treat that as "no defaults" and continue
+// with user-supplied layers.
+func GitleaksDefaultAllowlistPaths() ([]*regexp.Regexp, error) {
+	d, err := detect.NewDetectorDefaultConfig()
+	if err != nil {
+		return nil, fmt.Errorf("gitleaks defaults: %w", err)
+	}
+	var out []*regexp.Regexp
+	for _, al := range d.Config.Allowlists {
+		out = append(out, al.Paths...)
+	}
+	return out, nil
 }
 
 // _ ensures we keep the gitleaksconfig import referenced for

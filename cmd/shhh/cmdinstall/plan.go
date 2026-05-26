@@ -54,6 +54,13 @@ type Plan struct {
 	// (e.g. "-Users-alice-work-backend"). The audit layer decodes
 	// them back to absolute paths when it needs to.
 	SelectedProjects []string
+
+	// Engines is the ordered list of detection engines the install
+	// will persist to Config. Empty (default) means "leave Config
+	// engine selection unchanged" — the very first install lands
+	// `["gitleaks"]` via EffectiveEngines, subsequent installs keep
+	// the user's previous choice.
+	Engines []string
 }
 
 // Validate reports any reasons this plan cannot be executed. Used by the
@@ -126,6 +133,13 @@ func (p *Plan) Execute(binary string, out io.Writer) error {
 	// SelectedProjects is replaced (not merged) so unchecking a
 	// project in a re-run actually drops it from the audit scope.
 	cfg.SelectedProjects = append([]string{}, p.SelectedProjects...)
+	// Engines is replaced when the plan carries a non-empty list;
+	// otherwise the existing config selection is preserved (so a
+	// re-install that doesn't ask about engines doesn't silently
+	// reset them).
+	if len(p.Engines) > 0 {
+		cfg.Engines = append([]string{}, p.Engines...)
+	}
 
 	targets := p.projectTargets()
 	for _, agent := range p.Agents {

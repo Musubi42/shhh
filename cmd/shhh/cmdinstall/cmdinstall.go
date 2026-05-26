@@ -5,18 +5,26 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 )
+
+// debugReadBuildInfo is a package-level indirection over
+// runtime/debug.ReadBuildInfo so tests can stub it (otherwise
+// build info during `go test` lacks gitleaks as a "dep" and the
+// fallback path is the only one exercised).
+var debugReadBuildInfo = debug.ReadBuildInfo
 
 // RunInstall is the entry point for `shhh install [target] [paths...] [flags]`.
 //
 // Zero args enters the interactive installer. With a target:
 //
-//	shhh install claude-code                       # global
-//	shhh install claude-code ~/work/billing        # project scope, single repo
-//	shhh install claude-code ~/a ~/b ~/c           # project scope, N repos
-//	shhh install claude-code --scope global        # explicit (the default)
-//	shhh install claude-code --cwd ~/x             # back-compat alias for one positional path
+//	shhh install claude-code                                       # global, default engines
+//	shhh install claude-code ~/work/billing                        # project scope, single repo
+//	shhh install claude-code ~/a ~/b ~/c                           # project scope, N repos
+//	shhh install claude-code --scope global                        # explicit (the default)
+//	shhh install claude-code --engines gitleaks,shhh-native        # explicit engines
+//	shhh install claude-code --cwd ~/x                             # back-compat alias for one positional path
 //
 // Positional paths imply --scope project. Passing both --scope global
 // and positional paths is an error (the intent is ambiguous).
@@ -28,11 +36,11 @@ func RunInstall(args []string) error {
 	rest := args[1:]
 	switch target {
 	case "claude-code":
-		scope, paths, err := parseInstallFlags("install", rest)
+		scope, paths, engines, err := parseInstallFlags("install", rest)
 		if err != nil {
 			return err
 		}
-		return installClaudeCode(scope, paths)
+		return installClaudeCode(scope, paths, engines)
 	default:
 		return fmt.Errorf("install: unknown target %q (supported: claude-code, or omit for interactive)", target)
 	}
@@ -48,7 +56,7 @@ func RunUninstall(args []string) error {
 	rest := args[1:]
 	switch target {
 	case "claude-code":
-		scope, paths, err := parseInstallFlags("uninstall", rest)
+		scope, paths, _, err := parseInstallFlags("uninstall", rest)
 		if err != nil {
 			return err
 		}
@@ -129,19 +137,23 @@ func splitArgsByFlags(args []string, fs *flag.FlagSet) (flagArgs, positional []s
 }
 
 // parseInstallFlags is shared between install and uninstall. It accepts
-// any mix of positional paths and flags. Returns the resolved scope and
-// the absolute project paths (empty slice for global scope).
-func parseInstallFlags(verb string, args []string) (Scope, []string, error) {
+// any mix of positional paths and flags. Returns the resolved scope,
+// the absolute project paths (empty slice for global scope), and the
+// validated engine selection (nil when --engines was not passed; the
+// caller treats that as "preserve existing config").
+func parseInstallFlags(verb string, args []string) (Scope, []string, []string, error) {
 	fs := flag.NewFlagSet(verb, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	scopeStr := fs.String("scope", "", "install scope: global or project (default: project if path(s) given, else global)")
 	cwdFlag := fs.String("cwd", "", "deprecated alias for a single positional project path")
+	enginesFlag := fs.String("engines", "", "comma-separated engines to enable (e.g. gitleaks,shhh-native). Empty = keep existing or use default.")
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, `shhh %s claude-code [paths...] [--scope global|project]
+		fmt.Fprintf(os.Stderr, `shhh %s claude-code [paths...] [--scope global|project] [--engines gitleaks,shhh-native]
 
 With no path, installs globally (~/.claude/settings.json).
 With one or more paths, installs per-project into <path>/.claude/settings.json.
 Paths are resolved against $PWD; can be relative or absolute.
+--engines accepts a CSV; valid values: gitleaks, shhh-native.
 `, verb)
 		fs.PrintDefaults()
 	}
@@ -154,7 +166,7 @@ Paths are resolved against $PWD; can be relative or absolute.
 	// 2026-05-26 dryrun); cmdinstall needs the value-aware variant.
 	flagArgs, positional := splitArgsByFlags(args, fs)
 	if err := fs.Parse(flagArgs); err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 
 	// Collect positional paths and the --cwd alias.
@@ -174,33 +186,55 @@ Paths are resolved against $PWD; can be relative or absolute.
 		}
 	case ScopeGlobal:
 		if len(paths) > 0 {
-			return "", nil, fmt.Errorf("--scope global is incompatible with positional project paths")
+			return "", nil, nil, fmt.Errorf("--scope global is incompatible with positional project paths")
 		}
 	case ScopeProject:
 		if len(paths) == 0 {
 			cwd, err := os.Getwd()
 			if err != nil {
-				return "", nil, fmt.Errorf("resolve cwd: %w", err)
+				return "", nil, nil, fmt.Errorf("resolve cwd: %w", err)
 			}
 			paths = []string{cwd}
 		}
 	default:
-		return "", nil, fmt.Errorf("--scope must be 'global' or 'project' (got %q)", *scopeStr)
+		return "", nil, nil, fmt.Errorf("--scope must be 'global' or 'project' (got %q)", *scopeStr)
 	}
 
 	// Normalize project paths to absolute form so the install target is
 	// reproducible regardless of where the user ran `shhh` from.
 	for i, p := range paths {
 		if err := validateProjectPath(p); err != nil {
-			return "", nil, err
+			return "", nil, nil, err
 		}
 		abs, err := filepath.Abs(p)
 		if err != nil {
-			return "", nil, fmt.Errorf("resolve path %q: %w", p, err)
+			return "", nil, nil, fmt.Errorf("resolve path %q: %w", p, err)
 		}
 		paths[i] = abs
 	}
-	return scope, paths, nil
+
+	// Parse + validate --engines if supplied. Empty value = no override;
+	// caller preserves existing config.
+	var engines []string
+	if *enginesFlag != "" {
+		for _, raw := range strings.Split(*enginesFlag, ",") {
+			name := strings.TrimSpace(raw)
+			if name == "" {
+				continue
+			}
+			switch name {
+			case "gitleaks", "shhh-native":
+				engines = append(engines, name)
+			default:
+				return "", nil, nil, fmt.Errorf("--engines: unknown engine %q (want: gitleaks, shhh-native)", name)
+			}
+		}
+		if len(engines) == 0 {
+			return "", nil, nil, fmt.Errorf("--engines: at least one engine required")
+		}
+	}
+
+	return scope, paths, engines, nil
 }
 
 // validateProjectPath rejects paths that obviously aren't project
@@ -243,7 +277,10 @@ func validateProjectPath(p string) error {
 // scope=global, paths is ignored (a single canonical settings path is
 // used). For scope=project, paths is the list of project roots to
 // install into; each one gets <root>/.claude/settings.json.
-func installClaudeCode(scope Scope, paths []string) error {
+// engines is the validated engine selection; nil means "preserve
+// whatever is already in ~/.shhh/config.json (or take the default
+// on first install)".
+func installClaudeCode(scope Scope, paths []string, engines []string) error {
 	binary, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve shhh binary path: %w", err)
@@ -289,7 +326,7 @@ func installClaudeCode(scope Scope, paths []string) error {
 			return err
 		}
 
-		syncConfigOnInstall(scope, settingsPath)
+		syncConfigOnInstall(scope, settingsPath, engines)
 
 		if d == "" {
 			fmt.Printf("shhh: already installed in %s (no changes)\n", settingsPath)
@@ -303,8 +340,60 @@ func installClaudeCode(scope Scope, paths []string) error {
 			fmt.Printf("\nThis is a per-project install. Commit %s to your repo so teammates inherit shhh automatically.\n\n", settingsPath)
 		}
 	}
-	fmt.Println("Restart any running `claude` sessions for the hook to take effect.")
+	printInstallSummary(engines)
 	return nil
+}
+
+// printInstallSummary prints the post-install footer: active engines
+// with attribution + helpful one-liners pointing at follow-up
+// subcommands. The gitleaks block names the upstream MIT license and
+// links to the pinned `gitleaks.toml` so users can audit the
+// inherited path allowlist without leaving their terminal.
+func printInstallSummary(planEngines []string) {
+	// Engines actually persisted may differ from planEngines (nil
+	// means "preserve existing"); reload to print the truth.
+	cfg, _ := LoadConfig()
+	active := []string{"gitleaks"}
+	if cfg != nil && len(cfg.Engines) > 0 {
+		active = cfg.Engines
+	} else if len(planEngines) > 0 {
+		active = planEngines
+	}
+
+	fmt.Println()
+	fmt.Printf("Engines active: %s\n", strings.Join(active, ", "))
+	for _, e := range active {
+		switch e {
+		case "gitleaks":
+			ver := gitleaksVersion()
+			fmt.Printf("  • gitleaks %s — MIT, https://github.com/gitleaks/gitleaks\n", ver)
+			fmt.Printf("    Default ignore rules: https://github.com/gitleaks/gitleaks/blob/%s/config/gitleaks.toml\n", ver)
+		case "shhh-native":
+			fmt.Println("  • shhh-native — env cross-reference + URL-structural redaction (first-party)")
+		}
+	}
+	fmt.Println()
+	fmt.Println("  • Inspect active ignore rules:  shhh ignore list")
+	fmt.Println("  • Third-party notices:          shhh licenses")
+	fmt.Println()
+	fmt.Println("Restart any running `claude` sessions for the hook to take effect.")
+}
+
+// gitleaksVersion returns the gitleaks module version embedded in
+// this build (e.g. "v8.30.1"). Falls back to "v8" when the build
+// info doesn't expose module versions (unusual but possible for
+// some `go build` invocations).
+func gitleaksVersion() string {
+	info, ok := debugReadBuildInfo()
+	if !ok {
+		return "v8"
+	}
+	for _, dep := range info.Deps {
+		if dep.Path == "github.com/zricethezav/gitleaks/v8" {
+			return dep.Version
+		}
+	}
+	return "v8"
 }
 
 // uninstallClaudeCode is the symmetric multi-target uninstall.
@@ -351,7 +440,9 @@ func uninstallClaudeCode(scope Scope, paths []string) error {
 
 // syncConfigOnInstall adds the path to installed_paths and updates
 // scope using the "highest scope wins" rule (global > project).
-func syncConfigOnInstall(scope Scope, path string) {
+// engines is the explicit selection from --engines (or nil to
+// preserve the existing config / fall through to default).
+func syncConfigOnInstall(scope Scope, path string, engines []string) {
 	cfg, _ := LoadConfig()
 	if cfg == nil {
 		cfg = &Config{}
@@ -376,6 +467,9 @@ func syncConfigOnInstall(scope Scope, path string) {
 		if !found {
 			cfg.Agents = append(cfg.Agents, "claude-code")
 		}
+	}
+	if len(engines) > 0 {
+		cfg.Engines = append([]string{}, engines...)
 	}
 	if err := SaveConfig(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "shhh: warning: config update failed: %v\n", err)

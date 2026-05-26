@@ -11,7 +11,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Musubi42/shhh/cmd/shhh/cmdinstall"
 	"github.com/Musubi42/shhh/internal/detector"
+	"github.com/Musubi42/shhh/internal/ignore"
 	"github.com/Musubi42/shhh/internal/scanner"
 )
 
@@ -20,6 +22,7 @@ func Run(args []string) error {
 	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
 	showDetails := fs.Bool("show-details", false, "show host/user details (avoid in screenshots)")
 	format := fs.String("format", "text", "output format: text|json|md")
+	enginesFlag := fs.String("engines", "", "override engines for this invocation (comma-separated)")
 	if err := fs.Parse(reorderFlagsFirst(args)); err != nil {
 		return err
 	}
@@ -33,12 +36,21 @@ func Run(args []string) error {
 		return fmt.Errorf("resolve path: %w", err)
 	}
 
-	// Honour SHHH_DETECTOR so `shhh scan` is the calibration tool
-	// for the gitleaks migration (see docs/gitleaks-spike.md and
-	// docs/engine-architecture.md). Accepts shhh-native or
-	// gitleaks; unset/unknown falls back to shhh-native.
-	det := detector.NewFromEnv()
-	sc := scanner.New(det)
+	// Engine selection: --engines flag overrides config which
+	// overrides the documented default (gitleaks). LoadConfig is
+	// soft — a missing/corrupt config silently falls through to
+	// EffectiveEngines defaults.
+	cfg, _ := cmdinstall.LoadConfig()
+	engines := cfg.EffectiveEngines()
+	if *enginesFlag != "" {
+		engines = splitCSV(*enginesFlag)
+	}
+	det := detector.NewFromConfig(engines)
+	// Build the ignore matcher (gitleaks defaults + global + project
+	// .shhhignore). Failure to load any layer is non-fatal — logged to
+	// stderr by BuildLayered, then the scan proceeds with what remains.
+	matcher, _ := ignore.BuildLayered(abs, os.Stderr)
+	sc := scanner.New(det).WithIgnoreMatcher(matcher)
 	results, err := sc.Scan(abs)
 	if err != nil {
 		return fmt.Errorf("scan: %w", err)
@@ -225,4 +237,21 @@ func isBoolFlag(a string) bool {
 		return true
 	}
 	return false
+}
+
+// splitCSV parses a comma-separated engine list, trimming spaces.
+// Empty input returns nil (caller falls back to the default).
+func splitCSV(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

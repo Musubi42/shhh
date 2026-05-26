@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/Musubi42/shhh/cmd/shhh/cmdinstall"
 	"github.com/Musubi42/shhh/internal/detector"
 	"github.com/Musubi42/shhh/internal/redactor"
 	"github.com/Musubi42/shhh/internal/session"
@@ -93,13 +94,14 @@ func LoadRedactor(sessionID string) (*redactor.Redactor, func() error, error) {
 		return nil, nil, fmt.Errorf("read session store: %w", err)
 	}
 
-	// Honour SHHH_DETECTOR=shhh-native|gitleaks. Hook is the
-	// primary integration surface — every Read/Bash call from the
-	// agent passes through this redactor. The factory falls back
-	// to shhh-native if SHHH_DETECTOR is unset/unknown or if
-	// gitleaks fails to initialise. Phase 2 will replace this
-	// env-var path with a Config-driven multi-engine selector.
-	r := redactor.New(detector.NewFromEnv(), sess)
+	// Engine selection is driven by ~/.shhh/config.json (set by
+	// `shhh install`). Missing config (fresh user, tests) falls
+	// through to the documented default via Config.EffectiveEngines.
+	// LoadConfig errors are non-fatal: the hook MUST stay alive for
+	// every Read/Bash call from the agent, so a corrupt config
+	// degrades to the default engine set rather than failing.
+	cfg, _ := cmdinstall.LoadConfig()
+	r := redactor.New(detector.NewFromConfig(cfg.EffectiveEngines()), sess)
 
 	save := func() error {
 		salt, entries := sess.Snapshot()

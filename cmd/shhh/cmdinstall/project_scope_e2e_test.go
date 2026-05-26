@@ -25,7 +25,7 @@ import (
 func TestProjectScopeInstallAuditUninstallCycle(t *testing.T) {
 	_, shhhDir, projectRoot := hermeticEnv(t)
 
-	if err := installClaudeCode(ScopeProject, []string{projectRoot}); err != nil {
+	if err := installClaudeCode(ScopeProject, []string{projectRoot}, nil); err != nil {
 		t.Fatalf("installClaudeCode: %v", err)
 	}
 
@@ -211,7 +211,7 @@ func TestParseInstallFlags(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			scope, paths, err := parseInstallFlags("install", tc.args)
+			scope, paths, _, err := parseInstallFlags("install", tc.args)
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("want err containing %q, got %v", tc.wantErr, err)

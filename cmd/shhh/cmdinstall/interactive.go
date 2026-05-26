@@ -68,6 +68,15 @@ func RunInteractive() error {
 		return fmt.Errorf("installer cancelled: %w", err)
 	}
 
+	// --- Group 1a: which detection engines? ---------------------------
+	// gitleaks is the default (maintained third-party rules, MIT) +
+	// shhh-native adds env cross-reference and structural URL handling.
+	// At least one engine is required; the validator blocks submission
+	// otherwise. See docs/engine-architecture.md §2.4.
+	if err := chooseEngines(plan); err != nil {
+		return err
+	}
+
 	// --- Group 1b: install scope -------------------------------------
 	// Global is the default and matches what most users want. Project
 	// scope is for users who want shhh active only in selected repos —
@@ -188,6 +197,55 @@ func configureClaudeCode(plan *Plan) error {
 	)
 	if err := form.Run(); err != nil {
 		return fmt.Errorf("claude-code configuration cancelled: %w", err)
+	}
+	return nil
+}
+
+// chooseEngines prompts for the detection-engine selection and
+// stores it in plan.Engines. Defaults pre-select gitleaks, leaving
+// shhh-native available as an additive. At least one engine must
+// stay checked.
+//
+// Re-installs: if the persisted Config already has Engines, those
+// are pre-selected. The validator still requires ≥1 after editing.
+func chooseEngines(plan *Plan) error {
+	preselect := []string{"gitleaks"}
+	if cfg, _ := LoadConfig(); cfg != nil && len(cfg.Engines) > 0 {
+		preselect = cfg.Engines
+	}
+	plan.Engines = append([]string{}, preselect...)
+	wanted := map[string]bool{}
+	for _, e := range preselect {
+		wanted[e] = true
+	}
+
+	gitleaksOpt := huh.NewOption(
+		"gitleaks  — ~222 rules, MIT (github.com/gitleaks)", "gitleaks").
+		Selected(wanted["gitleaks"])
+	nativeOpt := huh.NewOption(
+		"shhh-native  — env cross-reference + URL-structural redaction", "shhh-native").
+		Selected(wanted["shhh-native"])
+
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Detection engines (at least one required)").
+				Description(
+					"gitleaks ships a curated allowlist (lockfiles, vendor, binaries) so\n"+
+						"shhh skips them automatically. shhh-native catches values copied\n"+
+						"from .env into code and preserves DB-URL host/db visibility.").
+				Options(gitleaksOpt, nativeOpt).
+				Value(&plan.Engines).
+				Validate(func(sel []string) error {
+					if len(sel) == 0 {
+						return fmt.Errorf("pick at least one engine")
+					}
+					return nil
+				}),
+		),
+	)
+	if err := form.Run(); err != nil {
+		return fmt.Errorf("installer cancelled: %w", err)
 	}
 	return nil
 }
