@@ -139,6 +139,77 @@ shell-via-Bash mode catches everything shhh needs to see.
 
 ---
 
+## 3. Cursor: Read→Edit ledger interaction unverified
+
+### Status
+
+shhh wires into Cursor's native hook system (v1.7+, expanded in
+v2.4 / 2026) via `~/.cursor/hooks.json`. Coverage:
+
+- ✓ `preToolUse:Shell` — every shell command Cursor runs goes
+  through `shhh redact`, just like Claude Code's Bash handler.
+- ✓ `preToolUse:Read` — file reads with detected secrets are
+  redirected to a per-session redacted cache copy.
+- ✓ `SessionEnd` / `stop` — session-cache wipe on conversation
+  end.
+
+### Unknowns
+
+The Read interception rewrites `tool_input.file_path` to a cache
+path. On Claude Code this triggers the documented Read→Edit
+ledger limit (§1) — Edit/Write on the original path fails with
+`File has not been read yet`. **Whether Cursor exhibits the same
+behaviour is unverified at the protocol level.** It depends on
+Cursor's internal precondition logic, which is not documented.
+
+Defensively, `cmd/shhh/cmdhook/cursor.go::handleCursorRead`
+emits the same "use Shell when Edit fails" narration in
+`agent_message` (Cursor's equivalent of Claude Code's
+`additionalContext`). If Cursor does not have the bug, the agent
+ignores the hint. If it does, the agent has the workaround
+in hand.
+
+Confirming requires running a real Cursor v2.4+ session against
+the installed hook and trying to Edit a redacted `.env`. Until
+that smoke test happens, treat the Read coverage on Cursor as
+"works in tests, untested in product."
+
+### `beforeReadFile` is not used
+
+Cursor exposes a `beforeReadFile` event that fires before file
+content reaches the model. Tempting target for redaction — but
+Cursor's docs are explicit that the response shape supports
+allow/deny only, with no field to return modified content. shhh
+cannot redact via this event. We use `preToolUse:Read` instead
+(see above), which exchanges the no-content-rewrite limit for
+the unknown ledger-interaction risk above.
+
+### What is NOT intercepted in v1
+
+- `apply_patch` / `Write` — payload semantics not fully verified;
+  a Write handler can be added once we confirm `tool_input`
+  shape and the `updated_input` round-trip.
+- `beforeShellExecution` — duplicates `preToolUse:Shell`. One
+  path is enough.
+
+### Reproduction (when shipped)
+
+```sh
+shhh install cursor          # writes ~/.cursor/hooks.json
+# Restart Cursor.
+# In Composer: ask Cursor to read a .env containing a Stripe key.
+# Composer receives [STRIPE_LIVE_KEY:sk_live_...:hash], not the raw value.
+```
+
+### Affected versions
+
+Verified against the install-time shape; Cursor IDE 2.4 (2026)
+is the current target. Cursor's hook system has shipped breaking
+changes between minor versions (1.7 → 2.x added events) so
+re-verify when bumping Cursor.
+
+---
+
 ## Reporting limitations not listed here
 
 Open an issue against

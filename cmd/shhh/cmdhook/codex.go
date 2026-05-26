@@ -51,7 +51,7 @@ func runCodex(stdin io.Reader, stdout io.Writer) error {
 	case "PreToolUse":
 		handleCodexPreToolUse(stdout, &in)
 	case "SessionEnd":
-		_ = WipeSession(in.SessionID)
+		_ = WipeSession(in.effectiveSessionID())
 		writeEmpty(stdout)
 	default:
 		writeEmpty(stdout)

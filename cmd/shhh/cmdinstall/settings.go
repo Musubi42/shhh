@@ -35,13 +35,29 @@ type managedHook struct {
 // managedFor returns the (event, matcher) pairs we install for a
 // given agent. Codex omits the Read matcher because Codex has no
 // first-class Read tool: file reads happen via `cat`/`rg`/`sed`
-// inside Bash. See cmd/shhh/cmdhook/codex.go for the dispatcher.
+// inside Bash. Cursor uses lowerCamelCase event names
+// (`preToolUse`) and a `Shell` tool name instead of `Bash`. See
+// cmd/shhh/cmdhook/{codex,cursor}.go for each dispatcher.
 func managedFor(agent string) []managedHook {
 	switch agent {
 	case "codex":
 		return []managedHook{
 			{"PreToolUse", "Bash"},
 			{"SessionEnd", ""},
+		}
+	case "cursor":
+		// Cursor's session-end event spelling has shifted between
+		// versions (`SessionEnd` in some docs, `stop` in the v2.x
+		// changelog). Register the lifecycle event under `stop`
+		// (most-current docs reference) and runCursor accepts
+		// both spellings defensively. If Cursor adds a third name
+		// later, expand the dispatcher rather than the registration
+		// set — adding non-existent event keys to hooks.json risks
+		// rejection from a strict parser.
+		return []managedHook{
+			{"preToolUse", "Read"},
+			{"preToolUse", "Shell"},
+			{"stop", ""},
 		}
 	default: // claude-code
 		return []managedHook{
@@ -54,12 +70,21 @@ func managedFor(agent string) []managedHook {
 
 // Install merges shhh's hook entries into the settings file at path
 // for the given agent. binary is the absolute path to the shhh
-// executable that will run on each firing. agent ("claude-code" or
-// "codex") drives both the command suffix (`shhh hook <agent>`) and
-// the set of (event, matcher) pairs to install. Returns a
-// unified-ish diff string describing the change (empty when no
-// change).
+// executable that will run on each firing. agent ("claude-code",
+// "codex", or "cursor") drives both the command suffix (`shhh hook
+// <agent>`) and the set of (event, matcher) pairs to install.
+// Returns a unified-ish diff string describing the change (empty
+// when no change).
+//
+// Claude Code and Codex share a nested hook shape (each matcher
+// entry wraps an inner `hooks: [{type, command, timeout}]` array).
+// Cursor uses a flatter shape (each entry has `command` /
+// `matcher` / `timeout` directly). Install dispatches to the
+// agent-appropriate writer.
 func Install(path, binary, agent string) (string, error) {
+	if agent == "cursor" {
+		return installCursorHooks(path, binary)
+	}
 	raw, settings, err := loadOrInit(path)
 	if err != nil {
 		return "", err
@@ -98,7 +123,13 @@ func Install(path, binary, agent string) (string, error) {
 // entries for other agents, should they coexist in the same file) is
 // left alone. The agent argument drives suffix matching: we only
 // remove entries whose command ends in ` hook <agent>`.
+//
+// Cursor uses a different on-disk hook shape — see
+// installCursorHooks / uninstallCursorHooks.
 func Uninstall(path, agent string) (string, error) {
+	if agent == "cursor" {
+		return uninstallCursorHooks(path)
+	}
 	raw, settings, err := loadOrInit(path)
 	if err != nil {
 		return "", err

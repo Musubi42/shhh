@@ -267,6 +267,9 @@ func agentOptions(detected []string) []huh.Option[string] {
 	if want["codex"] {
 		opts = append(opts, huh.NewOption("Codex  (detected at ~/.codex — Bash-only coverage, see docs)", "codex").Selected(true))
 	}
+	if want["cursor"] {
+		opts = append(opts, huh.NewOption("Cursor IDE  (detected at ~/.cursor — restart Cursor after install)", "cursor").Selected(true))
+	}
 	return opts
 }
 

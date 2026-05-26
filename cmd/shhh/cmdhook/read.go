@@ -105,7 +105,7 @@ func handleRead(stdout io.Writer, in *hookInput) {
 		return
 	}
 
-	red, save, err := LoadRedactor(in.SessionID)
+	red, save, err := LoadRedactor(in.effectiveSessionID())
 	if err != nil {
 		writeEmpty(stdout)
 		return
@@ -128,7 +128,7 @@ func handleRead(stdout io.Writer, in *hookInput) {
 
 	// Write redacted copy to the per-session cache, then point Claude at
 	// it via updatedInput.file_path.
-	destPath, err := RedactedPath(in.SessionID, abs)
+	destPath, err := RedactedPath(in.effectiveSessionID(), abs)
 	if err != nil {
 		writeEmpty(stdout)
 		return

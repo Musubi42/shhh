@@ -24,18 +24,37 @@ func Run(args []string) error {
 		return runClaudeCode(os.Stdin, os.Stdout)
 	case "codex":
 		return runCodex(os.Stdin, os.Stdout)
+	case "cursor":
+		return runCursor(os.Stdin, os.Stdout)
 	default:
-		return fmt.Errorf("hook: unknown target %q (supported: claude-code, codex)", target)
+		return fmt.Errorf("hook: unknown target %q (supported: claude-code, codex, cursor)", target)
 	}
 }
 
-// hookInput is the subset of the Claude Code hook stdin payload we care
-// about. Unknown fields pass through JSON unmarshal unchanged.
+// hookInput is the subset of an agent's hook stdin payload we care
+// about. Claude Code and Codex use `session_id`; Cursor splits the
+// notion into `conversation_id` (long-lived thread) and
+// `generation_id` (per-LLM-call). We accept both shapes and let
+// `effectiveSessionID` resolve which one to use. Unknown fields pass
+// through JSON unmarshal unchanged.
 type hookInput struct {
-	SessionID    string          `json:"session_id"`
-	HookEventName string         `json:"hook_event_name"`
-	ToolName     string          `json:"tool_name"`
-	ToolInput    json.RawMessage `json:"tool_input"`
+	SessionID      string          `json:"session_id"`
+	ConversationID string          `json:"conversation_id"`
+	HookEventName  string          `json:"hook_event_name"`
+	ToolName       string          `json:"tool_name"`
+	ToolInput      json.RawMessage `json:"tool_input"`
+}
+
+// effectiveSessionID returns the agent-appropriate identifier used to
+// scope the session cache and the placeholder map. Prefers
+// `session_id` when present (Claude Code, Codex) and falls back to
+// `conversation_id` (Cursor). Empty when neither is set — callers
+// should writeEmpty in that case.
+func (in *hookInput) effectiveSessionID() string {
+	if in.SessionID != "" {
+		return in.SessionID
+	}
+	return in.ConversationID
 }
 
 func runClaudeCode(stdin io.Reader, stdout io.Writer) error {
@@ -54,7 +73,7 @@ func runClaudeCode(stdin io.Reader, stdout io.Writer) error {
 	case "PreToolUse":
 		handlePreToolUse(stdout, &in)
 	case "SessionEnd":
-		_ = WipeSession(in.SessionID)
+		_ = WipeSession(in.effectiveSessionID())
 		writeEmpty(stdout)
 	default:
 		writeEmpty(stdout)

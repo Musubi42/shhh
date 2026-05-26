@@ -77,7 +77,7 @@ func (p *Plan) Validate() error {
 	}
 	for _, a := range p.Agents {
 		switch a {
-		case "claude-code", "codex":
+		case "claude-code", "codex", "cursor":
 		default:
 			return fmt.Errorf("plan: agent %q is not supported yet", a)
 		}

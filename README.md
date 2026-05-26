@@ -116,8 +116,17 @@ Until that lands, in-place edits via `apply_patch` can hand the
 model a raw secret. Full repro:
 [`docs/known-limitations.md`](docs/known-limitations.md) §2.
 
-**Cursor** support is scoped in
-[`docs/ready-to-publish/05-cursor-support.md`](docs/ready-to-publish/05-cursor-support.md).
+**Cursor IDE** support also ships (Cursor v1.7+ native hooks):
+
+```sh
+shhh install cursor    # writes ~/.cursor/hooks.json
+```
+
+Both `Shell` and `Read` are intercepted via `preToolUse`. The
+Read→Edit ledger interaction is unverified on Cursor at the
+protocol level — if `Edit` fails on a redacted file, fall back
+to `Shell` (sed/tee/python) as on Claude Code. Full repro:
+[`docs/known-limitations.md`](docs/known-limitations.md) §3.
 
 ---
 

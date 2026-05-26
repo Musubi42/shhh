@@ -35,14 +35,14 @@ func RunInstall(args []string) error {
 	target := args[0]
 	rest := args[1:]
 	switch target {
-	case "claude-code", "codex":
+	case "claude-code", "codex", "cursor":
 		scope, paths, engines, err := parseInstallFlags("install", rest)
 		if err != nil {
 			return err
 		}
 		return installAgent(target, scope, paths, engines)
 	default:
-		return fmt.Errorf("install: unknown target %q (supported: claude-code, codex, or omit for interactive)", target)
+		return fmt.Errorf("install: unknown target %q (supported: claude-code, codex, cursor, or omit for interactive)", target)
 	}
 }
 
@@ -55,14 +55,14 @@ func RunUninstall(args []string) error {
 	target := args[0]
 	rest := args[1:]
 	switch target {
-	case "claude-code", "codex":
+	case "claude-code", "codex", "cursor":
 		scope, paths, _, err := parseInstallFlags("uninstall", rest)
 		if err != nil {
 			return err
 		}
 		return uninstallAgent(target, scope, paths)
 	default:
-		return fmt.Errorf("uninstall: unknown target %q (supported: claude-code, codex)", target)
+		return fmt.Errorf("uninstall: unknown target %q (supported: claude-code, codex, cursor)", target)
 	}
 }
 
@@ -394,6 +394,13 @@ func printInstallSummary(agent string, planEngines []string) {
 		fmt.Println("via apply_patch can hand the model a raw secret. See docs/known-limitations.md.")
 		fmt.Println()
 		fmt.Println("Restart any running `codex` sessions for the hook to take effect.")
+	case "cursor":
+		fmt.Println("Cursor coverage note: shhh wires into Cursor's native hook system (v1.7+).")
+		fmt.Println("Shell + Read are intercepted; the Read→Edit ledger interaction is unverified")
+		fmt.Println("on Cursor — if Edit fails on a redacted file, use Shell (sed/tee/python) as on")
+		fmt.Println("Claude Code. See docs/known-limitations.md §3.")
+		fmt.Println()
+		fmt.Println("Restart Cursor (close all windows) for the hook to take effect.")
 	default:
 		fmt.Println("Restart any running `claude` sessions for the hook to take effect.")
 	}
@@ -519,11 +526,14 @@ func inferScopeFromPaths(paths []string) string {
 	if len(paths) == 0 {
 		return ""
 	}
-	globals := make([]string, 0, 2)
+	globals := make([]string, 0, 3)
 	if p, err := claudeSettingsPath(); err == nil && p != "" {
 		globals = append(globals, filepath.Clean(p))
 	}
 	if p, err := codexHooksPath(); err == nil && p != "" {
+		globals = append(globals, filepath.Clean(p))
+	}
+	if p, err := cursorHooksPath(); err == nil && p != "" {
 		globals = append(globals, filepath.Clean(p))
 	}
 	for _, p := range paths {
@@ -613,9 +623,37 @@ func AgentSettingsPath(agent string, scope Scope, cwd string) (string, error) {
 		default:
 			return "", fmt.Errorf("unknown scope %q", scope)
 		}
+	case "cursor":
+		switch scope {
+		case ScopeGlobal:
+			return cursorHooksPath()
+		case ScopeProject:
+			if cwd == "" {
+				return "", fmt.Errorf("project scope requires a working directory")
+			}
+			abs, err := filepath.Abs(cwd)
+			if err != nil {
+				return "", fmt.Errorf("resolve cwd: %w", err)
+			}
+			return filepath.Join(abs, ".cursor", "hooks.json"), nil
+		default:
+			return "", fmt.Errorf("unknown scope %q", scope)
+		}
 	default:
 		return "", fmt.Errorf("unknown agent %q", agent)
 	}
+}
+
+// cursorHooksPath returns the global Cursor hooks file at
+// ~/.cursor/hooks.json. Cursor IDE has no documented env override
+// equivalent to $CLAUDE_CONFIG_DIR / $CODEX_HOME; if one ships
+// later, plumb it here.
+func cursorHooksPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home dir: %w", err)
+	}
+	return filepath.Join(home, ".cursor", "hooks.json"), nil
 }
 
 // codexHooksPath returns the global Codex hooks file. Respects
@@ -669,6 +707,17 @@ func DetectInstalledAgents() []string {
 		}
 	}
 
-	// Cursor: not yet supported.
+	// Cursor: ~/.cursor (Cursor IDE's hook + MCP config dir).
+	// macOS GUI Cursor also writes ~/Library/Application Support/Cursor
+	// for general state, but the hook config lives under the dotfile
+	// dir per developers.cursor.com/docs/hooks.
+	{
+		if home, herr := os.UserHomeDir(); herr == nil {
+			dir := filepath.Join(home, ".cursor")
+			if st, err := os.Stat(dir); err == nil && st.IsDir() {
+				out = append(out, "cursor")
+			}
+		}
+	}
 	return out
 }

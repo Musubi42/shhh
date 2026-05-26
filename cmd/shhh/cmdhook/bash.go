@@ -45,7 +45,7 @@ func handleBash(stdout io.Writer, in *hookInput) {
 	}
 
 	shhh := shhhExecutable()
-	sid := in.SessionID
+	sid := in.effectiveSessionID()
 	if !sessionIDRe.MatchString(sid) {
 		writeEmpty(stdout)
 		return
