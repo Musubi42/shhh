@@ -146,13 +146,17 @@ func recommendationText(r *benchReport) string {
 	}
 	native := r.findEngine(engineNative)
 	gl := r.findEngine(engineGitleaks)
+	union := r.findEngine(engineUnion)
 	switch {
 	case len(a.OnlyNative) > 0 && len(a.OnlyGitleaks) == 0 && native != nil:
 		return fmt.Sprintf("shhh-native: best coverage (%d findings; gitleaks misses %d labels)", len(native.Findings), a.NativeTotal)
 	case len(a.OnlyNative) == 0 && len(a.OnlyGitleaks) > 0 && gl != nil:
 		return fmt.Sprintf("gitleaks: best coverage (%d findings; shhh-native misses %d labels)", len(gl.Findings), a.GitTotal)
 	case len(a.OnlyNative) > 0 && len(a.OnlyGitleaks) > 0 && native != nil:
-		return fmt.Sprintf("union = %d findings (no engine is a superset)", len(native.Findings)+a.GitTotal)
+		if union != nil {
+			return fmt.Sprintf("union = %d findings (no engine is a superset)", len(union.Findings))
+		}
+		return fmt.Sprintf("union ≈ %d findings (no engine is a superset)", len(native.Findings)+a.GitTotal)
 	default:
 		count := a.SharedTotal
 		if native != nil {

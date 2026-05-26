@@ -118,25 +118,20 @@ func (m *multiEngineBackend) Detect(content []byte) []Finding {
 	}
 	wg.Wait()
 
-	seen := make(map[[2]int]int) // span → engine index that owns the slot
+	// We iterate engines in ascending index order (i.e. priority
+	// order from `Config.Engines`). The first engine to claim a span
+	// keeps it; later engines flagging the same span are dropped.
+	// No "replace in place" path is needed — the loop ordering
+	// already enforces label priority.
+	seen := make(map[[2]int]struct{})
 	var out []Finding
-	for engIdx, findings := range results {
+	for _, findings := range results {
 		for _, f := range findings {
 			key := [2]int{f.Start, f.End}
-			if existing, ok := seen[key]; ok {
-				if engIdx < existing {
-					// Earlier engine wins; replace in-place.
-					for i := range out {
-						if out[i].Start == f.Start && out[i].End == f.End {
-							out[i] = f
-							break
-						}
-					}
-					seen[key] = engIdx
-				}
+			if _, dup := seen[key]; dup {
 				continue
 			}
-			seen[key] = engIdx
+			seen[key] = struct{}{}
 			out = append(out, f)
 		}
 	}

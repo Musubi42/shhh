@@ -74,7 +74,15 @@ func renderTerminal(w io.Writer, r *benchReport, useColor bool) {
 			fmt.Fprintln(w)
 		}
 
-		// One-line recommendation
+		// One-line recommendation. When the synthetic `union`
+		// engine ran (bench appends it whenever ≥2 real engines are
+		// selected), use its actual finding count so the footer
+		// number matches the table. Otherwise fall back to a label-
+		// based estimate (50+9 style) for runs where union is absent.
+		unionCount := 0
+		if u := r.findEngine(engineUnion); u != nil {
+			unionCount = len(u.Findings)
+		}
 		switch {
 		case len(onlyNative) > 0 && len(onlyGL) == 0:
 			fmt.Fprintf(w, "  → Best coverage: %sshhh-native%s (%d findings; gitleaks misses %d labels)\n",
@@ -83,8 +91,13 @@ func renderTerminal(w io.Writer, r *benchReport, useColor bool) {
 			fmt.Fprintf(w, "  → Best coverage: %sgitleaks%s (%d findings; shhh-native misses %d labels)\n",
 				c.bold, c.reset, len(gl.Findings), totalCount(onlyGL))
 		case len(onlyNative) > 0 && len(onlyGL) > 0:
-			fmt.Fprintf(w, "  → Best coverage: %sboth engines%s (union = %d findings)\n",
-				c.bold, c.reset, len(native.Findings)+totalCount(onlyGL))
+			if unionCount > 0 {
+				fmt.Fprintf(w, "  → Best coverage: %sboth engines%s (union = %d findings)\n",
+					c.bold, c.reset, unionCount)
+			} else {
+				fmt.Fprintf(w, "  → Best coverage: %sboth engines%s (estimate = %d findings)\n",
+					c.bold, c.reset, len(native.Findings)+totalCount(onlyGL))
+			}
 		default:
 			fmt.Fprintf(w, "  → Both engines fully agree (%d findings)\n",
 				len(native.Findings))
