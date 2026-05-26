@@ -131,8 +131,17 @@ irm https://musubi42.github.io/shhh/uninstall.ps1 | iex
 ```
 
 The script detaches shhh from Claude Code, removes the binary, and
-deletes `~/.shhh` (session cache + audit log). Pass `SHHH_KEEP_DATA=1`
-to keep the cache and audit history.
+deletes `~/.shhh` (session cache + audit log).
+
+To keep the cache and audit history, pass `SHHH_KEEP_DATA=1`
+*after* the pipe (so it lands in the shell that runs the script,
+not in `curl`'s environment):
+
+```sh
+curl -fsSL https://musubi42.github.io/shhh/uninstall.sh | SHHH_KEEP_DATA=1 sh
+```
+
+PowerShell users: `$env:SHHH_KEEP_DATA = '1'` before running `irm`.
 
 Installed via `go install`? Also `rm $(go env GOPATH)/bin/shhh`.
 

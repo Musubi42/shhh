@@ -13,6 +13,12 @@
 #
 # Env overrides:
 #   SHHH_KEEP_DATA=1   skip removing ~/.shhh (keep cache + audit history)
+#
+# IMPORTANT: env vars must sit BEFORE the `sh` after the pipe, not before
+# `curl`. `SHHH_KEEP_DATA=1 curl ... | sh` does NOT work — the var ends
+# up in curl's env only. Correct invocation:
+#
+#   curl -fsSL https://musubi42.github.io/shhh/uninstall.sh | SHHH_KEEP_DATA=1 sh
 
 set -eu
 

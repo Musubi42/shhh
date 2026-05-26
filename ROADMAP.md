@@ -695,6 +695,30 @@ sessions that hit the same file.
 
 ---
 
+## 6. CI cosmetic hygiene (low priority)
+
+**Status:** logged 2026-05-26 after the v0.3.0 release run. The
+workflow goes green but emits two annotation warnings worth
+addressing before the launch post brings third-party eyes on the
+Actions tab:
+
+1. **Node 20 deprecation.** `actions/checkout@v4`,
+   `actions/setup-go@v5`, and `goreleaser/goreleaser-action@v6`
+   all run on Node 20. GitHub will force them to Node 24 starting
+   2026-06-02 and rip Node 20 from runners on 2026-09-16. Bump to
+   the next major (or set `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true`)
+   before the forced flip lands.
+2. **goreleaser version pin.** The release workflow uses `latest`
+   for the goreleaser version, which currently auto-locks to
+   `~> v2` with a warning. Pin explicitly to `~> v2` in
+   `.github/workflows/release.yml` to silence the warning and
+   prevent a surprise jump to v3.
+
+Neither blocks a release. Bundle into one chore commit when
+brief 06 (launch post) is imminent.
+
+---
+
 ## Out of scope for this roadmap (on purpose)
 
 - **MCP integration.** CLAUDE.md rule 5 is explicit: not in scope.
