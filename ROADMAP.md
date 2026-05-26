@@ -12,12 +12,111 @@ Everything below them is contingent on the friction surface shrinking
 enough that a user on a monorepo is willing to keep the hook installed
 for a full day.
 
-**Status update (2026-05-25):** the Read→Edit cascade described in
-item 1 has been substantially reduced by subsequent fixes — the
-"every retry re-fails" cycle no longer reproduces consistently.
-Residual rough edges remain (see notes below the prompt) but the
-project is no longer blocked on this from a distribution standpoint.
-Item 2 (detection FPs) is still open and is the next quality lever.
+**Status update (2026-05-26):** items 1 and 2 are now both in a
+landed state. Item 1 (Read→Edit cascade) has been substantially
+reduced since 2026-05-25; item 2 (detection engine replacement)
+shipped as a 4-commit refactor on 2026-05-26 — see the engine
+redesign section below. The remaining quality levers are item 3
+(intentional-fixture bypass — split into the now-shipped detector
+skip-list and the still-future hook bypass), item 4 (narration
+compression, contingent on item 1), and item 5 (cache scoping).
+
+---
+
+## Recent progress — engine redesign, 4-commit refactor (2026-05-26)
+
+Closes ROADMAP item #2 in full. Reference: `docs/engine-architecture.md`
+and `~/.claude/plans/tu-peux-planifier-le-tender-sloth.md`.
+Commits: `c2b0509` (Phase 1), `88484e2` (Phases 2-4),
+`60ed106` (Phases 5-6), `e118bb6` (post-review fixes).
+
+**What changed**
+
+- **gitleaks is the new default detection engine.** The bespoke
+  shhh detector survives as `shhh-native`, repositioned as an
+  additive layer for capabilities gitleaks lacks (env
+  cross-reference, structural URL preservation: a
+  `postgres://user:pwd@host/db` keeps `host/db` visible to the
+  LLM while creds get redacted).
+- **Per-user engine selection.** `Config.Engines []string` in
+  `~/.shhh/config.json`. Interactive installer picks via huh
+  MultiSelect; non-interactive via `--engines gitleaks,shhh-native`.
+  At least one engine is required. The hook reads the same config.
+- **Multi-engine runner.** `internal/detector/multiEngineBackend`
+  runs N engines in parallel goroutines and merges findings with
+  union-by-(start,end) span. First engine in the list wins for
+  label attribution on identical spans. Engine init failures
+  surface a stderr warning and the runner continues without that
+  engine; total failure falls back to `shhh-native`.
+- **Layered `.shhhignore`.** New `internal/ignore/` package with
+  three layers (lowest → highest priority): gitleaks built-in
+  regex allowlist (lockfiles, vendor, binaries — read live from
+  the embedded gitleaks module), `~/.shhh/.shhhignore`,
+  `<project>/.shhhignore`. Last-decision-wins semantics let a
+  project `!go.sum` re-include a path that gitleaks would default
+  to ignoring. `internal/scanner` consults the matcher in its
+  `WalkDir` callback; ignored directories short-circuit before
+  stat.
+- **New subcommands.**
+  - `shhh ignore list` — prints the resolved cascade with a
+    versioned GitHub link to the embedded gitleaks.toml.
+  - `shhh ignore add <pattern> [--global|--project]` — appends.
+  - `shhh ignore check <path>` — attributes a path's decision to
+    its source layer via `LayeredMatcher.Explain`.
+  - `shhh licenses` — prints shhh MIT + the embedded gitleaks
+    v8 MIT notice (preserves MIT attribution for binary
+    distribution).
+- **Install attribution.** Post-install summary lists active
+  engines with a versioned link to the gitleaks `gitleaks.toml`
+  (path allowlist source). The repo `NOTICE` mirrors this for
+  cloners.
+- **bench upgrades.** `--engines=shhh-native,gitleaks` runs both
+  individually AND appends a synthetic `union` pseudo-engine that
+  mirrors the production multi-engine merge — the bench report's
+  "best coverage" line now matches the table because both come
+  from the same span-dedup math.
+
+**Observed impact on the shhh repo**
+
+Re-running the bench against `./internal` (12 files, 77 KB):
+- `shhh-native`: 50 findings (~17 ms/file)
+- `gitleaks`: 37 findings (~16 ms/file)
+- `union`: 74 findings (~20 ms/file)
+- Agreement: 28 shared · 22 only-shhh-native · 9 only-gitleaks
+
+The `HIGH_ENTROPY × 442` flood on `go.sum` that motivated the
+whole redesign is gone — gitleaks' default allowlist eliminates
+it, and shhh-native respects the same allowlist through the
+shared `.shhhignore` cascade. `shhh ignore check go.sum` reports
+`IGNORED — matched layer: gitleaks (built-in allowlist)`.
+
+**Breaking changes** (all OK — pre-release, sole user):
+- `SHHH_DETECTOR=legacy|both` no longer accepted. `shhh-native`
+  is the new internal name; `both` is replaced by listing two
+  engines in `Config.Engines`.
+- `~/.shhh/config.json` schema bumped to include `engines` (empty
+  field reads as the default `["gitleaks"]`).
+- Bench `data.json` JSON tag rename: `onlyLegacy` → `onlyShhhNative`,
+  `legacyTotal` → `onlyShhhNativeTotal`.
+- `internal/detector.NewBothBackend` removed; `bothBackend` struct
+  gone; per-content diff log on stderr gone. `shhh bench` is
+  where engine comparison lives now.
+
+**What this unblocks**
+
+- ROADMAP item #2: closed.
+- ROADMAP item #3 (intentional-fixture bypass): the detector
+  skip-list half has shipped via `.shhhignore`. The hook bypass
+  half (feature B: "let Claude read this file unredacted") is a
+  separate design pass — `docs/engine-architecture.md` §2.2
+  carves it out explicitly to prevent the two concepts from
+  sharing a file or flag.
+
+**Verified by an independent agent** (general-purpose subagent,
+no prior session context). Findings: build + tests clean, four
+smoke commands behave per design, two minor issues raised and
+fixed in `e118bb6` (dead code in multi-engine merge, bench footer
+math now matches the table).
 
 ---
 
@@ -387,30 +486,19 @@ dead to the Edit tool, regardless of whether the token was real.
 
 ## 2. Replace the detection engine
 
-**Status:** Step 1 of 4 shipped 2026-05-26 — gitleaks backend
-lives behind `SHHH_DETECTOR=shhh-native|gitleaks`, default
-unchanged. `shhh bench` is the measurement tool that drives the
-remaining 3 steps. See the consolidated "Recent progress —
-`shhh bench` + gitleaks Step 1" entry above.
+**Status: CLOSED — shipped 2026-05-26** in the 4-commit engine
+redesign (see the top-of-file "engine redesign" entry for the
+full account). gitleaks is the default, `shhh-native` survives as
+an additive layer for env-cross-reference + structural URL
+handling, `.shhhignore` propagates gitleaks' lockfile allowlist
+across both engines. The `HIGH_ENTROPY × 442` flood on `go.sum`
+that originally motivated this item is gone.
 
-**Remaining work:**
-- Step 2 (calibration): dogfood with running both engines (Phase 6 reintroduces a `union` pseudo-engine for bench),
-  watch the diff stream and `shhh bench` output, decide between
-  extending the gitleaks → shhh label-mapping table vs keeping
-  shhh-native as a pre-filter for what gitleaks misses
-  (POSTGRES_CONNSTRING, env-aware GITHUB_PAT, etc.).
-- Step 3 (flip default): switch `SHHH_DETECTOR` default from
-  `shhh-native` to `gitleaks` once the diff stream is stable and the
-  bench dashboard shows no regression on the canonical corpora.
-- Step 4 (cleanup): delete dead bespoke rules in
-  `internal/rules/` once nothing depends on them.
-
-**Concrete first action item from the 2026-05-26 bench run:**
-`HIGH_ENTROPY × 449` is dominated by `go.sum × 442` (98.4%).
-Tuning the shhh-native entropy gate to skip well-known lockfile
-extensions (`.sum`, `*-lock.json`, `*.lock`) before Step 3
-would eliminate most of shhh-native's false-positive volume in the
-"both" diff stream, making the gitleaks-only future cleaner.
+The original 4-step migration plan (calibration → flip default →
+cleanup of bespoke rules) was collapsed into a single redesign
+because pre-release status removed the backwards-compat ceremony
+the steps were guarding. Dead-code pruning in `internal/rules/`
+remains a possible future cleanup but isn't blocking anything.
 
 ---
 
@@ -494,14 +582,35 @@ producing friction on its own dogfood.
 
 ## 3. Allowlist / bypass affordance for intentional fixture content
 
-**Status:** unblocked once item 2 lands (or sooner, if item 2 slips).
+**Status: HALF SHIPPED 2026-05-26 — see `docs/engine-architecture.md` §2.2.**
 
-**Problem:** Some files in any project contain intentional
-secret-shaped content: test fixtures with `sk_live_...`, docs
-showing example env vars, migration files with placeholder
-connection strings. Over-redacting these is not a detection bug —
-the content really looks like a secret — it's a policy bug. Shhh
-needs a way for the developer to say "I know, this is fine."
+The redesign explicitly split this item into two distinct
+features that must not share a file, a flag, or a syntax:
+
+**(A) Detector skip-list — SHIPPED.** `.shhhignore` (project +
+global) with gitignore syntax + `!` negation, layered on top of
+the gitleaks built-in path allowlist. `shhh scan` / `shhh audit`
+/ `shhh bench` consult it via the scanner's WalkDir. The
+`shhh ignore list/add/check` subcommands give users an inspector
+without grepping config. This is the safe half: a path matching
+`.shhhignore` is simply not scanned, so noise on fixtures /
+lockfiles / vendor disappears.
+
+**(B) Hook bypass — STILL FUTURE.** "Let Claude read this file
+unredacted" remains unshipped, intentionally. It is materially
+more dangerous than (A): set-and-forget on `~/.aws/credentials`
+would leak it forever. A clean design pass needs to cover loud
+warnings, possible TTL, explicit per-session logging, and a
+distinct filename (`.shhhtrust` is the working name) so users
+copy-pasting a snippet for (A) don't accidentally enable (B).
+Not blocked on anything else; pick it up when there's real demand.
+
+**Original problem statement (kept for reference):** some files
+contain intentional secret-shaped content — test fixtures with
+`sk_live_...`, docs showing example env vars, migration files
+with placeholder connection strings. Over-redacting these is not
+a detection bug, it's a policy bug. Shhh needs a way for the
+developer to say "I know, this is fine."
 
 **Shapes to evaluate:**
 - In-file marker: `# shhh:allow` on the first line of a file
