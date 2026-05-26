@@ -159,6 +159,15 @@ push protection, and there is one non-obvious fact to remember:
 
 When adding a new fixture secret, expect to allowlist it once.
 
+## Maintenance reminder — gitleaks LICENSE
+
+`cmd/shhh/cmdlicenses/gitleaks-LICENSE.txt` is embedded in the
+binary and shown by `shhh licenses`. It must always match the
+gitleaks version pinned in `go.mod`. When you bump that version,
+run `make update-gitleaks-license` and commit the refreshed file
+in the same commit as the go.mod bump. Skipping this ships a
+stale MIT notice and silently misattributes upstream changes.
+
 ## When in doubt
 
 If a decision is not obviously pulling toward the forcing-function

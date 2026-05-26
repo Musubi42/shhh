@@ -9,7 +9,7 @@ BIN_DIR   := bin
 SHHH      := $(BIN_DIR)/shhh
 SHHH_EVAL := $(BIN_DIR)/shhh-eval
 
-.PHONY: all build test vet bench scan fixture-scan clean help demo
+.PHONY: all build test vet bench scan fixture-scan clean help demo update-gitleaks-license
 
 all: build test
 
@@ -48,3 +48,16 @@ demo: build ## end-to-end hook smoke test (simulates PreToolUse/Read)
 
 clean:
 	rm -rf $(BIN_DIR)
+
+# update-gitleaks-license refreshes cmd/shhh/cmdlicenses/gitleaks-LICENSE.txt
+# from the module cache. Run this whenever go.mod bumps the gitleaks version,
+# otherwise `shhh licenses` ships a stale MIT notice from the previous
+# release. The path resolves the exact version pinned in go.mod.
+update-gitleaks-license: ## refresh embedded gitleaks LICENSE from module cache
+	@GITLEAKS_VERSION=$$($(GO) list -m -f '{{.Version}}' github.com/zricethezav/gitleaks/v8); \
+	GITLEAKS_DIR=$$($(GO) env GOMODCACHE)/github.com/zricethezav/gitleaks/v8@$$GITLEAKS_VERSION; \
+	echo "refreshing from $$GITLEAKS_DIR"; \
+	chmod u+w cmd/shhh/cmdlicenses/gitleaks-LICENSE.txt 2>/dev/null || true; \
+	cp "$$GITLEAKS_DIR/LICENSE" cmd/shhh/cmdlicenses/gitleaks-LICENSE.txt; \
+	chmod u+w cmd/shhh/cmdlicenses/gitleaks-LICENSE.txt; \
+	echo "ok — committed file now matches gitleaks $$GITLEAKS_VERSION"
