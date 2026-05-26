@@ -44,8 +44,11 @@ func Install(path, binary string) (string, error) {
 	before := string(raw)
 
 	cmd := quoteIfNeeded(binary) + hookSuffix
+	var added []managedHook
 	for _, mh := range managed() {
-		ensureHook(settings, mh, cmd)
+		if ensureHook(settings, mh, cmd) {
+			added = append(added, mh)
+		}
 	}
 
 	after, err := marshalIndent(settings)
@@ -58,7 +61,13 @@ func Install(path, binary string) (string, error) {
 	if err := atomicWrite(path, after); err != nil {
 		return "", err
 	}
-	return diff(before, string(after), path), nil
+	return renderChange(changeReport{
+		path:          path,
+		direction:     directionAdd,
+		hooks:         added,
+		command:       cmd,
+		preservedKeys: countNonHookKeys(settings),
+	}), nil
 }
 
 // Uninstall removes all shhh hook entries from the settings.json at path.
@@ -75,6 +84,8 @@ func Uninstall(path string) (string, error) {
 		return "", nil
 	}
 
+	var removed []managedHook
+	var removedCmd string
 	for event, v := range hooks {
 		entries, ok := v.([]any)
 		if !ok {
@@ -87,8 +98,10 @@ func Uninstall(path string) (string, error) {
 				cleaned = append(cleaned, e)
 				continue
 			}
+			matcher, _ := m["matcher"].(string)
 			inner, _ := m["hooks"].([]any)
 			newInner := make([]any, 0, len(inner))
+			removedHere := false
 			for _, h := range inner {
 				hm, ok := h.(map[string]any)
 				if !ok {
@@ -96,9 +109,15 @@ func Uninstall(path string) (string, error) {
 					continue
 				}
 				cmd, _ := hm["command"].(string)
-				if !strings.HasSuffix(cmd, hookSuffix) {
-					newInner = append(newInner, h)
+				if strings.HasSuffix(cmd, hookSuffix) {
+					removedHere = true
+					removedCmd = cmd
+					continue
 				}
+				newInner = append(newInner, h)
+			}
+			if removedHere {
+				removed = append(removed, managedHook{event: event, matcher: matcher})
 			}
 			if len(newInner) == 0 {
 				// Whole matcher entry is ours — drop it.
@@ -127,7 +146,13 @@ func Uninstall(path string) (string, error) {
 	if err := atomicWrite(path, after); err != nil {
 		return "", err
 	}
-	return diff(before, string(after), path), nil
+	return renderChange(changeReport{
+		path:          path,
+		direction:     directionRemove,
+		hooks:         removed,
+		command:       removedCmd,
+		preservedKeys: countNonHookKeys(settings),
+	}), nil
 }
 
 // loadOrInit reads path and returns its bytes plus a parsed map. If the
@@ -157,8 +182,9 @@ func loadOrInit(path string) ([]byte, map[string]any, error) {
 // ensureHook makes settings.hooks[mh.event] contain a matcher entry for
 // mh.matcher whose inner hooks list includes an entry with the given
 // command. Creates missing levels. Idempotent: if an entry already exists
-// it's left alone.
-func ensureHook(settings map[string]any, mh managedHook, cmd string) {
+// it's left alone. Returns true when a new hook entry was inserted, false
+// when the call was a no-op (already present).
+func ensureHook(settings map[string]any, mh managedHook, cmd string) bool {
 	hooks, _ := settings["hooks"].(map[string]any)
 	if hooks == nil {
 		hooks = map[string]any{}
@@ -196,7 +222,7 @@ func ensureHook(settings map[string]any, mh managedHook, cmd string) {
 			continue
 		}
 		if c, _ := hm["command"].(string); c == cmd {
-			return // already installed
+			return false // already installed
 		}
 	}
 	inner = append(inner, map[string]any{
@@ -205,6 +231,20 @@ func ensureHook(settings map[string]any, mh managedHook, cmd string) {
 		"timeout": 10,
 	})
 	target["hooks"] = inner
+	return true
+}
+
+// countNonHookKeys returns the number of top-level settings keys other
+// than "hooks". Used to tell the user how many of their existing
+// settings were preserved unchanged across install/uninstall.
+func countNonHookKeys(settings map[string]any) int {
+	n := 0
+	for k := range settings {
+		if k != "hooks" {
+			n++
+		}
+	}
+	return n
 }
 
 func marshalIndent(v any) ([]byte, error) {
@@ -265,20 +305,3 @@ func strconv_quote(s string) string {
 	return string(b)
 }
 
-// diff renders a minimal two-section "before/after" block for user output.
-// It is not a unified diff — that would be more code than the milestone
-// needs. The intent is just "show the user what changed."
-func diff(before, after, path string) string {
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "--- %s (before)\n", path)
-	sb.WriteString(before)
-	if !strings.HasSuffix(before, "\n") {
-		sb.WriteByte('\n')
-	}
-	fmt.Fprintf(&sb, "+++ %s (after)\n", path)
-	sb.WriteString(after)
-	if !strings.HasSuffix(after, "\n") {
-		sb.WriteByte('\n')
-	}
-	return sb.String()
-}

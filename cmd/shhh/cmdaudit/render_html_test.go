@@ -118,17 +118,17 @@ func TestRenderHTMLBasic(t *testing.T) {
 		"~/Documents/Musubi42/shhh",
 		"[STRIPE_LIVE_KEY:sk_live_...:a1b2]",
 		"[POSTGRES_CONNSTRING:admin@prod-db.internal:5432/myapp:e5f6]",
-		"UNPROTECTED", // from badge label uppercase CSS; raw HTML is "Unprotected"
-		"PROTECTED",
+		"NOT HOOKED", // CSS-uppercased; raw HTML is "Not hooked"
+		"HOOKED",
 	}
 	for _, w := range wants {
 		// Badge labels are uppercased via CSS; raw HTML contains capitalized forms.
 		check := w
-		if w == "UNPROTECTED" {
-			check = "Unprotected"
+		if w == "NOT HOOKED" {
+			check = "Not hooked"
 		}
-		if w == "PROTECTED" {
-			check = "Protected"
+		if w == "HOOKED" {
+			check = "Hooked"
 		}
 		if !strings.Contains(idx, check) {
 			t.Errorf("index.html missing %q", check)

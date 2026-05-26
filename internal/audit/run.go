@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -48,13 +49,54 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 		cfg.AuditDir = auditDir
 	}
 
+	emit := func(e ProgressEvent) {
+		if cfg.OnProgress != nil {
+			cfg.OnProgress(e)
+		}
+	}
+
 	// ----- Step 1: enumerate projects from Claude's own state -----
-	projects, err := enumerateClaudeProjects(cfg.ClaudeRoot)
+	// Pass cfg.ScopePaths into enumeration so the per-project
+	// transcript read (`ResolveProjectPath` inside the loop) is
+	// skipped for entries whose dash-name can't possibly map to a
+	// path in scope. On a user with 50 projects and scope=1, this
+	// avoids ~49 transcript reads + readdir calls — the dominant
+	// cost of audit start-up. See F6 in dryrun-2026-05-26.md.
+	projects, err := enumerateClaudeProjects(cfg.ClaudeRoot, cfg.ScopePaths)
 	if err != nil {
 		return nil, fmt.Errorf("enumerate claude projects: %w", err)
 	}
 
-	// ----- Step 2: apply selectedProjects filter -----
+	// ----- Step 2a: drop ignored projects (user opt-out via
+	// ~/.shhh/config.json) BEFORE counting sessions or scanning. -----
+	if len(cfg.IgnoredPaths) > 0 {
+		ignore := make(map[string]bool, len(cfg.IgnoredPaths))
+		for _, p := range cfg.IgnoredPaths {
+			ignore[p] = true
+		}
+		kept := projects[:0]
+		for _, p := range projects {
+			if !ignore[p.AbsPath] {
+				kept = append(kept, p)
+			}
+		}
+		projects = kept
+	}
+
+	// ----- Step 2a': scope filter (CLI positional paths) -----
+	// Only keep projects whose AbsPath equals or is under one of
+	// cfg.ScopePaths. Empty list disables this filter.
+	if len(cfg.ScopePaths) > 0 {
+		kept := projects[:0]
+		for _, p := range projects {
+			if pathUnderAny(p.AbsPath, cfg.ScopePaths) {
+				kept = append(kept, p)
+			}
+		}
+		projects = kept
+	}
+
+	// ----- Step 2b: apply selectedProjects filter -----
 	selected := cfg.SelectedProjects
 	if len(selected) > 0 {
 		filter := make(map[string]bool, len(selected))
@@ -70,41 +112,84 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 		projects = kept
 	}
 
+	// ----- Step 2c: translate the surviving project set into a
+	// dashName allow-list for the sources. Sources walk ~/.claude on
+	// their own and don't know about ignored_paths — without this they
+	// would keep reading the .jsonl of projects we already dropped,
+	// blowing past sessionsTotal and surfacing ignored projects in the
+	// live scroll log (real bug observed 2026-05-25).
+	if selected == nil && (len(cfg.IgnoredPaths) > 0 || len(projects) > 0) {
+		selected = make([]string, 0, len(projects))
+		for _, p := range projects {
+			selected = append(selected, p.DashName)
+		}
+	}
+
+	// Announce the work the renderer is about to watch.
+	totalSessions := 0
+	for _, p := range projects {
+		totalSessions += p.SessionsTotal
+	}
+	emit(ProgressEvent{
+		Kind:          ProgressEnumerated,
+		ProjectsTotal: len(projects),
+		SessionsTotal: totalSessions,
+	})
+
 	// ----- Step 3: run audit sources in parallel -----
+	transcriptSrc := NewTranscriptSource(cfg.ClaudeRoot)
+	if cfg.OnProgress != nil {
+		transcriptSrc.OnSessionDone = func() {
+			emit(ProgressEvent{Kind: ProgressSessionFinished})
+		}
+		transcriptSrc.OnProjectDone = func(dashName, absPath string, sessionsScanned int) {
+			emit(ProgressEvent{
+				Kind:            ProgressProjectScanned,
+				ProjectDashName: dashName,
+				ProjectDisplay:  TildePath(absPath),
+				Sessions:        sessionsScanned,
+			})
+		}
+	}
 	sources := []AuditSource{
-		NewTranscriptSource(cfg.ClaudeRoot),
+		transcriptSrc,
 		NewPromptHistorySource(cfg.ClaudeRoot),
 		NewPasteCacheSource(cfg.ClaudeRoot),
 		NewFileHistorySource(cfg.ClaudeRoot),
 	}
 	agg := newAggregator()
-
-	var progress func(string, int)
-	if cfg.Progress != nil {
-		progress = cfg.Progress
+	if cfg.OnProgress != nil {
+		agg.SetOnFinding(func(placeholder, projectDashName string) {
+			emit(ProgressEvent{
+				Kind:            ProgressFinding,
+				Placeholder:     placeholder,
+				ProjectDashName: projectDashName,
+			})
+		})
 	}
-	drainSources(ctx, sources, selected, agg, progress)
+
+	var sourceProgress func(string, int)
+	if cfg.OnProgress != nil {
+		sourceProgress = func(source string, count int) {
+			emit(ProgressEvent{Kind: ProgressSourceCount, Source: source, Count: count})
+		}
+	}
+	drainSources(ctx, sources, selected, agg, sourceProgress)
 	leakedByProject := agg.Finalize()
 
-	// ----- Step 4: current-disk at-risk scan per project -----
-	for i := range projects {
-		if !projects[i].OnDisk {
-			continue
-		}
-		atRisk := scanProjectAtRisk(ctx, projects[i].AbsPath, agg)
-		projects[i].AtRisk = atRisk
-	}
-
-	// ----- Step 5: join leaked findings + decide status -----
 	shhhInstalledPaths, shhhScope := loadShhhInstalledState(cfg.ShhhConfigPath)
 
+	// ----- Steps 4 + 5 merged: per-project at-risk scan, leaked
+	// findings join, status decision, and a progress emit so the
+	// renderer can flow projects one-by-one into its scroll log.
 	for i := range projects {
+		if projects[i].OnDisk {
+			projects[i].AtRisk = scanProjectAtRisk(ctx, projects[i].AbsPath, agg)
+		}
+
 		key := projects[i].DashName
 		if pf, ok := leakedByProject[key]; ok {
 			projects[i].Leaked = pf.Leaked
-			// Promote the earliest LastSeen across leaked findings
-			// as the project's LastSessionAt if we don't already
-			// have it from elsewhere.
 			for _, f := range pf.Leaked {
 				if !f.LastSeen.IsZero() && f.LastSeen.After(projects[i].LastSessionAt) {
 					projects[i].LastSessionAt = f.LastSeen
@@ -117,6 +202,16 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 			}
 		}
 		ApplyStatus(&projects[i], shhhInstalledPaths, shhhScope)
+
+		emit(ProgressEvent{
+			Kind:           ProgressProjectFinished,
+			ProjectIndex:   i,
+			ProjectDisplay: projects[i].DisplayPath,
+			Sessions:       projects[i].SessionsTotal,
+			Leaked:         len(projects[i].Leaked),
+			AtRisk:         len(projects[i].AtRisk),
+			Status:         projects[i].Status,
+		})
 	}
 
 	// Drop the unattributed orphan bucket from leakedByProject — in
@@ -149,14 +244,30 @@ func Run(ctx context.Context, cfg Config) (*Result, error) {
 	}
 	result.Delta = delta
 
+	emit(ProgressEvent{Kind: ProgressDone})
 	return result, nil
+}
+
+// EnumerateProjects is the exported wrapper around the internal
+// enumeration used by Run. The pre-audit picker calls this to
+// build the project list it offers the user. claudeRoot empty
+// resolves to ~/.claude.
+func EnumerateProjects(claudeRoot string) ([]Project, error) {
+	if claudeRoot == "" {
+		root, err := ClaudeRoot()
+		if err != nil {
+			return nil, err
+		}
+		claudeRoot = root
+	}
+	return enumerateClaudeProjects(claudeRoot, nil)
 }
 
 // enumerateClaudeProjects lists every subdirectory of
 // <root>/projects/ and turns each into a Project with paths decoded
 // and basic metadata populated. At this stage findings are still
 // empty; Run joins them on a later pass.
-func enumerateClaudeProjects(root string) ([]Project, error) {
+func enumerateClaudeProjects(root string, scopeRoots []string) ([]Project, error) {
 	projectsDir := ClaudeProjectsDir(root)
 	entries, err := os.ReadDir(projectsDir)
 	if err != nil {
@@ -171,7 +282,17 @@ func enumerateClaudeProjects(root string) ([]Project, error) {
 			continue
 		}
 		dash := e.Name()
-		abs := DecodeDashPath(dash)
+		// Cheap scope pre-filter: skip the per-project IO
+		// (transcript-read + jsonl-count) when the dash-name can't
+		// possibly decode to a path in scope. False positives are
+		// harmless — they're caught by the post-enumeration scope
+		// filter in Run(); false negatives would be bugs and are
+		// covered by TestDashNameCouldMatchScope.
+		if !DashNameCouldMatchScope(dash, scopeRoots) {
+			continue
+		}
+		projectDir := filepath.Join(projectsDir, dash)
+		abs := ResolveProjectPath(dash, projectDir)
 		p := Project{
 			AbsPath:     abs,
 			DisplayPath: TildePath(abs),
@@ -179,7 +300,7 @@ func enumerateClaudeProjects(root string) ([]Project, error) {
 			OnDisk:      PathExists(abs),
 		}
 		// Count session files (*.jsonl) as a cheap sessions-total.
-		p.SessionsTotal = countJSONLFiles(filepath.Join(projectsDir, dash))
+		p.SessionsTotal = countJSONLFiles(projectDir)
 		out = append(out, p)
 	}
 	// Stable order for testability and consistent output.
@@ -382,5 +503,65 @@ func loadShhhInstalledState(configPath string) (paths []string, scope string) {
 	if err := jsonUnmarshal(buf, &minimal); err != nil {
 		return nil, ""
 	}
-	return minimal.Paths, minimal.Scope
+
+	// Defensive: config.json can drift from the actual settings.json
+	// state (e.g. user edits settings.json by hand, or pre-fix
+	// uninstall didn't clean config.json). Re-read each referenced
+	// settings.json and keep only the ones that genuinely contain a
+	// shhh hook today. Cheap (one file per path, usually one path).
+	verified := minimal.Paths[:0]
+	for _, p := range minimal.Paths {
+		if settingsHasShhhHook(p) {
+			verified = append(verified, p)
+		}
+	}
+	if len(verified) == 0 {
+		return nil, ""
+	}
+
+	// Re-derive scope from verified paths so config drift doesn't lie:
+	// any path that equals the user's global settings.json wins as
+	// "global" (covers every project), otherwise scope is "project"
+	// (only the per-project paths cover their respective trees).
+	inferredScope := "project"
+	if globalPath := globalSettingsPath(); globalPath != "" {
+		for _, p := range verified {
+			if filepath.Clean(p) == filepath.Clean(globalPath) {
+				inferredScope = "global"
+				break
+			}
+		}
+	}
+	return verified, inferredScope
+}
+
+// globalSettingsPath returns the path of the user's global Claude Code
+// settings.json. Mirrors cmdinstall.claudeSettingsPath but kept here
+// to avoid an import cycle (audit cannot import cmdinstall).
+func globalSettingsPath() string {
+	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" {
+		return filepath.Join(dir, "settings.json")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".claude", "settings.json")
+}
+
+// settingsHasShhhHook returns true iff the file at path is a Claude
+// Code settings.json containing at least one hook command that
+// references the shhh binary. Tolerant of missing/malformed files —
+// returns false rather than erroring.
+func settingsHasShhhHook(path string) bool {
+	buf, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	// We don't need to parse the schema; a substring scan over the
+	// "command" strings is enough and decouples us from settings.json
+	// shape changes. Avoid false positives: match "shhh hook" (the
+	// subcommand) rather than the bare word "shhh", which could
+	// appear in a comment or unrelated path.
+	return strings.Contains(string(buf), "shhh hook")
 }

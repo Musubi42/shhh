@@ -27,6 +27,7 @@ type Config struct {
 	Agents           []string `json:"agents"`            // ["claude-code", ...]
 	Paths            []string `json:"installed_paths"`   // absolute settings.json paths touched
 	SelectedProjects []string `json:"selected_projects"` // per-agent project dash-names to audit; empty = all
+	IgnoredPaths     []string `json:"ignored_paths,omitempty"` // absolute project paths to skip in `shhh audit`
 }
 
 // ConfigPath returns the absolute path to the shhh user config file.
@@ -119,4 +120,49 @@ func (c *Config) AddInstalledPath(p string) {
 		}
 	}
 	c.Paths = append(c.Paths, p)
+}
+
+// RemoveInstalledPath removes a settings.json path from the config.
+// If the path list becomes empty, the Scope is cleared too so a future
+// audit doesn't see a half-emptied "global install with zero paths".
+// Used by `shhh uninstall` so its on-disk state matches reality.
+func (c *Config) RemoveInstalledPath(p string) {
+	kept := c.Paths[:0]
+	for _, existing := range c.Paths {
+		if existing != p {
+			kept = append(kept, existing)
+		}
+	}
+	c.Paths = kept
+	if len(c.Paths) == 0 {
+		c.Scope = ""
+	}
+}
+
+// AddIgnoredPath records an absolute project path the user wants
+// `shhh audit` to skip. Idempotent. Sorted on save.
+func (c *Config) AddIgnoredPath(p string) {
+	for _, existing := range c.IgnoredPaths {
+		if existing == p {
+			return
+		}
+	}
+	c.IgnoredPaths = append(c.IgnoredPaths, p)
+	sort.Strings(c.IgnoredPaths)
+}
+
+// RemoveIgnoredPath drops p from the ignore list. Returns true if it
+// was present (used by the CLI to print "removed" vs "not in list").
+func (c *Config) RemoveIgnoredPath(p string) bool {
+	kept := c.IgnoredPaths[:0]
+	found := false
+	for _, existing := range c.IgnoredPaths {
+		if existing == p {
+			found = true
+			continue
+		}
+		kept = append(kept, existing)
+	}
+	c.IgnoredPaths = kept
+	return found
 }

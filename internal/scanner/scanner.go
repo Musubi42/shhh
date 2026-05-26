@@ -25,7 +25,7 @@ type FileResult struct {
 // Scanner walks the filesystem and runs the detector on files that match the
 // sensitive-file patterns from PRD §7.4.
 type Scanner struct {
-	det           *detector.Detector
+	det           detector.Backend
 	maxFileBytes  int64
 	skipDirs      map[string]struct{}
 	sensitiveName map[string]struct{}
@@ -33,8 +33,30 @@ type Scanner struct {
 	sensitiveGlob []string
 }
 
-// New returns a scanner with default patterns.
-func New(det *detector.Detector) *Scanner {
+// envValueChecker is the optional capability the shhh-native detector
+// exposes for the env-aware second pass. Gitleaks doesn't have
+// an equivalent; non-supporting backends fall back to running
+// Detect on the value.
+type envValueChecker interface {
+	CheckEnvValue(string) bool
+}
+
+// checkEnvValue gates env-value collection by delegating to the
+// backend's CheckEnvValue when available, or by checking whether
+// the main Detect pass would flag the value. Mirrors the
+// redactor's equivalent so both packages handle backend swap the
+// same way.
+func checkEnvValue(d detector.Backend, value string) bool {
+	if ec, ok := d.(envValueChecker); ok {
+		return ec.CheckEnvValue(value)
+	}
+	return len(d.Detect([]byte(value))) > 0
+}
+
+// New returns a scanner with default patterns. Accepts any
+// `detector.Backend` — typically `detector.NewFromEnv()` from
+// callers that want SHHH_DETECTOR honoured.
+func New(det detector.Backend) *Scanner {
 	return &Scanner{
 		det:          det,
 		maxFileBytes: 10 * 1024 * 1024, // 10 MB
@@ -233,7 +255,7 @@ func (s *Scanner) collectEnvValues(root string) (map[string]struct{}, map[string
 			if value == "" {
 				continue
 			}
-			if s.det.CheckEnvValue(value) {
+			if checkEnvValue(s.det, value) {
 				values[value] = struct{}{}
 			}
 		}

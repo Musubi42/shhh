@@ -33,6 +33,26 @@ a soft guideline. A prior 10-commit streak failed this check and
 produced a working library with no product. A human had to intervene.
 See `docs/postmortem-eval-overbuild.md`.
 
+## Pre-release status
+
+shhh has zero external users. Raphaël is the sole developer and
+sole user. There is no installed base to migrate, no API contract
+to honour, no deprecation cycle to manage.
+
+Practical consequences:
+- Breaking changes are not just allowed, they're often the right
+  call. Renaming things, removing options, flipping defaults — do
+  it cleanly in one commit, not behind a compat shim.
+- Do NOT write code paths "for users who might have the old
+  setup." There are none.
+- Do NOT add deprecation warnings, migration helpers, or
+  schema-version negotiation for our own config. When the design
+  changes, the format changes with it.
+- This is NOT permission to skip testing. Real-shell validation
+  (see `docs/testing-playbook.md`) still applies. "Pre-release"
+  means we can change the design, not that we can ship broken
+  binaries.
+
 ## Hard rules
 
 1. **Eval is a library test, not a product.** `go test ./...` is the
@@ -86,15 +106,18 @@ See `docs/postmortem-eval-overbuild.md`.
 
 1. `docs/postmortem-eval-overbuild.md` — why the prior roadmap got
    scrapped. Skip this once and you will repeat it.
-2. `docs/implementation-roadmap.md` — the current milestone list.
-3. `PRD.md` §§1, 2, 5, 6, 8 — the product vision. Skip §10 (phases)
+2. `docs/testing-playbook.md` — how to test changes end-to-end
+   without losing 30 minutes to stale binaries, aliased `cp`, or
+   buffered pipes. Read once before your first `make build`.
+3. `docs/implementation-roadmap.md` — the current milestone list.
+4. `PRD.md` §§1, 2, 5, 6, 8 — the product vision. Skip §10 (phases)
    and §11 (open questions) unless doing growth work; both are
    historical.
-4. `internal/detector`, `internal/session`, `internal/redactor`,
+5. `internal/detector`, `internal/session`, `internal/redactor`,
    `internal/rules`, `internal/scanner` — the core library. It
    works. It does not need redesign. It is ready to be the body of
    a hook.
-5. `cmd/shhh/` — the CLI. Currently has `scan` and `redact`
+6. `cmd/shhh/` — the CLI. Currently has `scan` and `redact`
    subcommands. It needs `install`, `uninstall`, and `hook`
    subcommands to become the product.
 

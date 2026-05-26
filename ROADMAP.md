@@ -21,6 +21,305 @@ Item 2 (detection FPs) is still open and is the next quality lever.
 
 ---
 
+## Recent progress — `shhh bench` + gitleaks Step 1 (2026-05-26)
+
+Detection-engine work for ROADMAP item #2 landed as two
+interlocking pieces in one session: a pluggable backend layer
+(so gitleaks can be opted into) and a measurement command (so
+the migration is data-driven, not vibes-driven).
+
+### Pluggable detector backends (`SHHH_DETECTOR` env flag)
+
+Spike (`docs/gitleaks-spike.md`) confirmed gitleaks-as-library
+is viable: 222 rules vs our ~30, MIT, clean Go API, +30ms perf,
++8 MB binary. Step 1 of the 4-step migration shipped in the
+same session:
+
+- `internal/detector/backend.go` — `Backend` interface (one
+  method, `Detect([]byte) []Finding`). `*Detector` satisfies it
+  via compile-time assertion.
+- `internal/detector/gitleaks.go` — `GitleaksBackend` wraps
+  gitleaks v8.30.1's `detect.Detector`. Label mapping for ~20
+  known rule IDs → our placeholder vocabulary; heuristic
+  fallback for the long tail.
+- `internal/detector/factory.go` — `NewFromEnv()` reads
+  `SHHH_DETECTOR=shhh-native|gitleaks`. the multi-engine wrapper runs in parallel,
+  returns legacy findings (safety), and writes one-line diff
+  events to stderr per unique content (`shhh detector-diff:
+  legacy=N gitleaks=M only-shhh-native=[…] only-gitleaks=[…]`).
+- `NewFromConfig(cfg)` (Phase 2) exposed so
+  callers like bench can silence the production diff stream by
+  passing `io.Discard`.
+- `redactor.New` and `scanner.New` accept the `Backend`
+  interface. Env-aware pass type-asserts an optional
+  `envValueChecker` so gitleaks degrades gracefully when its
+  vocabulary lacks the legacy "looser env threshold" feature.
+- Hook (`cmd/shhh/cmdhook/sessionstore.go`) and `shhh scan`
+  honour `SHHH_DETECTOR`. Audit / redact / eval stay legacy by
+  construction for reproducibility.
+
+### `shhh bench` — the calibration tool
+
+`shhh bench <path>...` runs every selected backend over the
+same corpus and emits both a terminal verdict and an HTML
+dashboard. Built so the user can answer "should I flip the
+default to gitleaks yet?" from observed data instead of
+guesswork.
+
+CLI:
+
+```
+shhh bench <path>...                          # all 3 engines
+shhh bench --engines=shhh-native,gitleaks <path>   # subset
+shhh bench --no-serve --no-html <path>        # CI / scripting
+shhh bench --open <path>                      # auto-launch viewer
+```
+
+Per bench run, the output directory `~/.shhh/bench/<timestamp>/`
+contains:
+
+- `data.json` — full report (engines, agreement matrix, label
+  hierarchy, per-finding rows). Single source of truth; `jq`
+  consumes it without HTML scraping.
+- `index.html` — thin shell (~23 KB) that fetches `data.json`
+  on load and renders client-side. ~300 lines vanilla JS, no
+  build step, no framework. Same hierarchy on screen as in the
+  JSON.
+
+The dashboard hierarchy: **label → file → finding**. Sorted by
+count desc at each level, so the noisiest contributors surface
+first. Per-finding rows show line number, redacted snippet
+(source line with the match replaced inline by `[LABEL:prefix…:hash]`),
+and on/off engine pips (`L` filled when legacy fired, `L̶`
+outlined faint when it didn't — same for gitleaks). Sticky
+filter bar: engine chips, label search, file path search.
+Common-prefix scan root computed so file paths display short
+(`go.sum`, not `~/long/full/path/go.sum`).
+
+Privacy invariant: raw match values never leave the backend.
+`makePlaceholder()` builds `[LABEL:prefix…:hash]` from SHA1[:8]
+of the value; the snippet's prefix gets scrubbed for any other
+finding's value in the same file (covers go.sum-style lines
+with two hashes). Locked by `TestMakePlaceholderRedacts` and
+`TestLineComputerSnippetScrubsOtherValues`.
+
+### Observed diagnostic on the shhh repo (the whole point)
+
+Running `shhh bench . demo/leaktest` against this repo (49
+files, 413 KB) produces the migration verdict in seconds:
+
+| | legacy | gitleaks | both |
+|---|---:|---:|---:|
+| Findings | 607 | 78 | 561 |
+| Time | 715 ms | 832 ms | 1.34 s |
+
+Agreement: 57 shared · 550 only-shhh-native · 18 only-gitleaks.
+
+Drill-down on the largest label tells the action item:
+**HIGH_ENTROPY × 449, of which 442 (98.4%) live in `go.sum`.**
+Tuning the shhh-native entropy gate to skip lockfiles would
+eliminate ~70% of shhh-native's false-positive volume in one move.
+Gitleaks fills the long tail: 18 `GENERIC_API_KEY` hits legacy
+doesn't recognise. None of this required reading the code — it
+came from the JSON. That's the win.
+
+### What's still pending on the detection-engine migration
+
+Step 1 unlocked Step 2: actually run running both engines (Phase 6 reintroduces a `union` pseudo-engine for bench) for a
+week of real work, watch the diff stream, decide between
+extending the label-mapping table vs keeping legacy as a
+pre-filter. Bench is the offline analogue of that signal —
+runnable on demand without waiting for organic usage.
+
+---
+
+## Recent progress — dryrun follow-up (2026-05-26)
+
+Self-dogfood dryrun while still in the build session. Logged in
+`docs/dryrun-2026-05-26.md`. Two CRITICAL bugs caught that all unit
+tests had missed:
+
+- **CLI flag-after-positional silently dropped.** `shhh audit .
+  --no-serve` ignored `--no-serve` because Go's `flag.Parse` stops at
+  the first non-flag argument. Identical bug in `shhh install
+  claude-code /tmp/x --scope global` — silently turned the flag tokens
+  into stray project paths and created `./--scope/.claude/` and
+  `./global/.claude/` directories. Fixed in both commands via
+  pre-splitting helpers (`splitFlagsAndPositionals` in cmdaudit,
+  value-aware `splitArgsByFlags` in cmdinstall). Regression tests:
+  `TestSplitFlagsAndPositionals`, `TestSplitArgsByFlags`.
+- Hand-off to maintainer for the redaction-path verification (F4 in
+  the dryrun doc): the dryrun agent runs *inside* a Claude Code
+  session and can't reload its own hook config, so the
+  install→read→placeholder loop has to be verified from a fresh
+  `claude` session by the maintainer.
+
+**Subsequent fixes (same day):**
+- **F2** install path validation: `validateProjectPath` refuses
+  paths starting with `-` (flag typos), ending in `.claude`
+  (double-nesting), or containing `..`. Soft warning when the dir
+  lacks `.git`/`package.json`/`go.mod`/`pyproject.toml`/`Cargo.toml`/etc.
+  — non-blocking; catches "wrong directory" mistakes without
+  refusing fresh-init repos.
+- **F5** audit scope wording: announcement now reads
+  `🛡️ shhh audit — scope ~/work/billing, scanning N projects (~M sessions)`
+  so the count is visibly scope-restricted, not the total inventory.
+- **F3+F4** new `shhh doctor` subcommand: health check that
+  inspects the running binary vs $PATH, validates
+  `~/.shhh/config.json`, walks `installed_paths` and flags entries
+  whose referenced `settings.json` no longer contains a shhh hook
+  (the F3 desync bug). `shhh doctor --fix` drops the stale entries
+  from the config. Friendly tree-style output with ✓/⚠/✗ markers,
+  ANSI auto-detect via `NO_COLOR` + isatty. Reminds users to
+  restart Claude sessions after install/uninstall (F4 hand-off,
+  surfaced as a check line rather than a separate command).
+
+**F6 (done):** `enumerateClaudeProjects` now takes the scope paths
+and skips per-project IO (transcript read + jsonl count) for
+dash-names that can't possibly decode to a path in scope. The
+correctness predicate is `DashNameCouldMatchScope` — dash and slash
+are treated as the same separator class to handle the
+hyphen/slash ambiguity (`/Users/me/open-source/shhh` and
+`/Users/me/open/source/shhh` are both candidates for dash-name
+`-Users-me-open-source-shhh`). False positives are caught by the
+existing post-enumeration scope filter; false negatives would be
+bugs and are covered by `TestDashNameCouldMatchScope` (9 cases).
+
+**Measured impact:** on a 23-project Claude history, `shhh audit .`
+(scope=1 project) was 17.8s before F6, 17.8s after — enumeration
+is dominated by per-project session scanning, so the savings are
+~50-200ms invisible to humans. The real perf story is
+**`shhh audit` (no scope, 6:57s) vs `shhh audit .` (scope, 17.8s)**
+— a 23× speed-up that's been in place since the earlier
+`ScopePaths` work. The testing-playbook reminds new agents to run
+the scoped form by default.
+
+**Doc landed:** `docs/testing-playbook.md` (referenced from
+`CLAUDE.md` reading order at step 2). Captures the dryrun's
+operational lessons — stale binary detection, aliased `cp`/`rm`,
+pipe-buffering with `head`, hook activation requiring session
+restart, side-effect cleanup recipes, the "go test is necessary
+not sufficient" rule, and a default test order for changes
+touching the CLI surface.
+
+---
+
+## Recent progress — per-project install + diff renderer (2026-05-26)
+
+Follow-up on the 2026-05-25 per-project MVP. All shipped, all on
+`main`, `make test` green. See `docs/per-project-install-kickoff.md`
+for the original design context.
+
+**CLI shape — positional paths**
+- `shhh install claude-code [paths...]` accepts positional project
+  paths. `--scope project` is inferred when any path is given;
+  `--scope global` is the default. Multi-path is supported in one
+  invocation. `--cwd` kept as a back-compat alias. Passing
+  `--scope global` together with a positional path is now an
+  explicit error (intent ambiguous).
+- Paths are normalized to absolute form via `filepath.Abs` so the
+  install target is reproducible no matter where `shhh` is invoked.
+- The HTML "Install shhh" CTAs no longer require `cd` — they emit
+  the positional form (`shhh install claude-code <path>`) with
+  `shellQuote()` for paths containing spaces.
+
+**Interactive picker**
+- New "Where to install shhh?" step between agent-select and audit
+  scope. Project scope opens a `huh.MultiSelect` over the user's
+  Claude history (`~/.claude/projects/`, OnDisk only), so the user
+  picks from a concrete list rather than typing a cwd.
+- Multi-select means one `shhh install` run can hook N repos.
+- A `✍ Type a custom path...` sentinel at the top of the list
+  triggers a free-form `huh.NewInput` loop for repos Claude has
+  never been opened in (fresh clones, brand-new projects). Tilde
+  expansion + dir-exists validation per entry.
+
+**Path-decoding bug fix**
+- `ListClaudeProjects` was using the naive `DecodeDashPath`, which
+  corrupted any path containing literal hyphens (`open-source/shhh`
+  → `open/source/shhh`). Switched to `ResolveProjectPath`, which
+  prefers the loss-less `cwd` field stored in transcript JSONLs.
+  Same fix as `internal/audit/run.go` got on 2026-05-25, just
+  applied to the install picker's path source.
+
+**Diff renderer**
+- The before/after JSON dump on install/uninstall (60+ lines) is
+  replaced by a compact semantic diff:
+  ```
+    + PreToolUse  matcher=Read  →  ~/.local/bin/shhh hook claude-code
+    + PreToolUse  matcher=Bash  →  ~/.local/bin/shhh hook claude-code
+    + SessionEnd  *             →  ~/.local/bin/shhh hook claude-code
+
+    3 hooks added · 7 existing settings preserved
+  ```
+- `ensureHook` now returns `bool` so callers can collect exactly
+  the entries that changed. ANSI colors auto-detect via `isatty` +
+  `NO_COLOR` (no-color.org convention). Sub-2-second scannability
+  is the goal — users see precisely what shhh touched, nothing
+  more.
+
+**Tests**
+- `TestProjectScopeInstallAuditUninstallCycle` — end-to-end:
+  install per-project → audit sees `[HOOKED ✓]` → uninstall →
+  audit demotes to `[NOT HOOKED]`. Also asserts sibling projects
+  outside the install root stay un-protected.
+- `TestPlanExecuteMultiProject` — single `Plan` with N project
+  paths installs into all of them in one Execute call.
+- `TestParseInstallFlags` — seven sub-cases covering positional /
+  flag / `--cwd` alias / scope-inference / incompatible-combo
+  errors.
+- `TestRenderChangeAddNoColor`, `…RemoveSingular`,
+  `…QuotedCommand` — diff renderer formatting, including the
+  no-color path and quoted-path display.
+
+**Decisions captured**
+- `.claude/` is **never** removed on uninstall, even when empty.
+  Claude Code may use the directory for unrelated state; an empty
+  dir is harmless; partial cleanup adds complexity for no user
+  benefit. Documented in `cmdinstall.go::uninstallClaudeCode` and
+  the kickoff doc's "Decisions captured" section.
+
+---
+
+## Recent progress — `shhh audit` polish (2026-05-25)
+
+Big session of forensic-audit work, driven by the v0.1 release
+dry-run. All shipped, all on `main`, `make test` green. See
+`docs/audit-api.md` for the full agent-facing reference and
+`docs/release-dryrun.md` for what triggered each change.
+
+**Bug fixes**
+- `[PROTECTED ✓]` was lying when `~/.shhh/config.json::installed_paths` drifted from the actual `settings.json` state. Fixed by (a) `shhh uninstall` now updates config.json, (b) the audit defensively re-reads each referenced settings.json and only trusts it if `shhh hook` is genuinely present (`internal/audit/run.go::settingsHasShhhHook`).
+- Path normalization was a naïve `strings.ReplaceAll("-", "/")` that mangled `open-source` into `open/source`. Replaced by `ResolveProjectPath` which prefers the loss-less `cwd` field from inside transcripts and falls back to dash-decode only when no transcript is readable.
+- `0/23 projects` counter stuck at zero during scan — `ProgressProjectFinished` only fired in the post-scan loop. Added `OnProjectDone` callback on `TranscriptSource`, emits `ProgressProjectScanned` per project as transcripts complete; counter ticks in real time.
+- Ctrl-C was captured by `signal.Notify` but no goroutine read it during the long scan, so it got swallowed and users had to kill the terminal. Watcher goroutine spawned before `auditpkg.Run` calls `cancel()` on first signal; second signal `os.Exit(130)`.
+- HTML report hid projects with no findings (only 8 of 23 visible). Now renders all of them with a `<details>` foldable group for the no-finding ones.
+- Live counter showed `events scanned` (per-line, opaque to users). Replaced by per-`.jsonl` `sessions scanned` matching the header's `(≈N sessions)` figure.
+- `ignored_paths` filtered the audit's `projects` slice but didn't propagate to the sources, which kept reading every `.jsonl` on disk. Step 2c in `Run()` now translates the surviving project set into a `selectedProjects` allow-list for the sources.
+
+**New features**
+- Interactive picker (`huh.MultiSelect`) on `shhh audit` by default. All projects shown with session counts (including `[folder gone]`), pre-checked except those in `ignored_paths`. Unchecking persists. `--no-select` bypasses for CI; auto-bypass in non-TTY.
+- Live scroll log with in-place upgrades: entries appear as `⟳ transcripts scanned`, upgrade in place to `✓ ... [HOOKED ✓] 🚨 N leaked` as the post-scan loop finalizes them. Block stays on screen after `ProgressDone` (it used to be cleared before users could read it).
+- ETA in the footer once ≥30 sessions are processed: `(elapsed / sessionsDone) × sessionsRemaining`. "almost done" below 30s remaining.
+- Live `🚨 N leaked` counter in the footer, ticking as the aggregator sees new `(placeholder, project)` pairs.
+- `shhh audit ignore <path>` / `unignore <path>` / `ignored` subcommands as scriptable equivalents of the picker.
+- HTML overview now has a top-level "⚠ N projects not hooked" install-CTA block above the project list, with a copy-paste global command and up to 3 per-project examples.
+
+**Wording sweep**
+- `PROTECTED` → `HOOKED`, `UNPROTECTED` → `NOT HOOKED`, `ARCHIVED` → `FOLDER GONE`. The old labels read as historical claims when they actually meant "right now" / "directory deleted". New labels are honest.
+- `Currently at risk` is conditional on status: `🔒 Will be redacted on next read` on hooked projects (proof, not alarm); `At risk on next session` on not-hooked.
+- Delta deltas read `+31 newly detected` instead of `+31 new`, to avoid implying 31 new leaks happened in the delta window.
+- Removed the misleading `9 days` header ("history span" was actually the earliest-detected-leak timestamp).
+
+**CLI restructure**
+- Removed per-project breakdown from the CLI summary entirely. CLI now shows header + 4-line summary + delta + rotation block + install CTA + URL. Per-project detail lives in the HTML report.
+
+**Per-project install — MVP shipped**
+- `shhh install claude-code --scope project [--cwd <path>]` and matching uninstall, plus `.claude/` dir auto-creation on missing. Config `scope` re-derived from `installed_paths` on every load.
+- Pending follow-ups documented in `docs/per-project-install-kickoff.md`: interactive picker enhancement, per-project HTML mini-CTA, global-with-local-override edge case, automated test coverage.
+
+---
+
 ## 1. Fix the Read→Edit ledger bug
 
 **Status:** largely resolved as of 2026-05-25. Kept here for the
@@ -87,6 +386,36 @@ dead to the Edit tool, regardless of whether the token was real.
 ---
 
 ## 2. Replace the detection engine
+
+**Status:** Step 1 of 4 shipped 2026-05-26 — gitleaks backend
+lives behind `SHHH_DETECTOR=shhh-native|gitleaks`, default
+unchanged. `shhh bench` is the measurement tool that drives the
+remaining 3 steps. See the consolidated "Recent progress —
+`shhh bench` + gitleaks Step 1" entry above.
+
+**Remaining work:**
+- Step 2 (calibration): dogfood with running both engines (Phase 6 reintroduces a `union` pseudo-engine for bench),
+  watch the diff stream and `shhh bench` output, decide between
+  extending the gitleaks → shhh label-mapping table vs keeping
+  shhh-native as a pre-filter for what gitleaks misses
+  (POSTGRES_CONNSTRING, env-aware GITHUB_PAT, etc.).
+- Step 3 (flip default): switch `SHHH_DETECTOR` default from
+  `shhh-native` to `gitleaks` once the diff stream is stable and the
+  bench dashboard shows no regression on the canonical corpora.
+- Step 4 (cleanup): delete dead bespoke rules in
+  `internal/rules/` once nothing depends on them.
+
+**Concrete first action item from the 2026-05-26 bench run:**
+`HIGH_ENTROPY × 449` is dominated by `go.sum × 442` (98.4%).
+Tuning the shhh-native entropy gate to skip well-known lockfile
+extensions (`.sum`, `*-lock.json`, `*.lock`) before Step 3
+would eliminate most of shhh-native's false-positive volume in the
+"both" diff stream, making the gitleaks-only future cleaner.
+
+---
+
+**Original framing kept for context** (predates the Step 1
+landing — historical):
 
 **Status:** second blocker. Without this, item 1 fixes a symptom
 while the root cause (over-redaction) keeps biting on new file types.

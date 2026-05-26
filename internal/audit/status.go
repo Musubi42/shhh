@@ -55,6 +55,20 @@ func coversPath(installedPaths []string, projectAbsPath string) bool {
 	return false
 }
 
+// pathUnderAny returns true when path equals one of roots or lives
+// under it. Used by Run's ScopePaths filter so a user-typed `shhh
+// audit ~/work` matches every transcript-recorded project under it.
+func pathUnderAny(path string, roots []string) bool {
+	clean := filepath.Clean(path)
+	for _, r := range roots {
+		root := filepath.Clean(r)
+		if clean == root || hasPathPrefix(clean, root) {
+			return true
+		}
+	}
+	return false
+}
+
 // hasPathPrefix reports whether path is equal to prefix or lives
 // under it (in the filesystem-hierarchy sense, not the
 // string-prefix sense).

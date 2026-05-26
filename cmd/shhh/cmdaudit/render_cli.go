@@ -105,49 +105,37 @@ func RenderCLI(w io.Writer, r *auditpkg.Result, useColor bool) error {
 		return err
 	}
 
-	// 4. Project blocks.
-	printed := sortedPrintable(r.Projects)
-	for _, p := range printed {
-		writeProject(&b, c, p)
-		b.WriteByte('\n')
-	}
-
-	// 5. Footer action block.
+	// 4. Footer action block. v0.2 slimmed the CLI: per-project
+	// details (findings, locations, badges) live in the HTML report
+	// only. The CLI keeps the summary + delta + rotation + install
+	// call to action + URL.
 	fmt.Fprintln(&b, rule)
 	if s.SecretsLeaked > 0 {
 		fmt.Fprintf(&b, "  %s %s\n",
 			c.red("✗"),
 			c.red(fmt.Sprintf("%d secrets already leaked — rotation is not optional", s.SecretsLeaked)))
 	}
-	if s.SecretsAtRisk > 0 {
-		// Collect unprotected projects that have at-risk findings so
-		// we can decide between the "protect with:" copy (there's an
-		// action to take) and the softer "in files" copy (everything
-		// is already protected, the at-risk finding is in an
-		// allowlisted location like a fixture file).
-		var actionable []auditpkg.Project
-		for _, p := range r.Projects {
-			if p.Status != auditpkg.StatusUnprotected {
-				continue
-			}
-			if len(p.AtRisk) == 0 {
-				continue
-			}
-			actionable = append(actionable, p)
+
+	// Count projects that have findings but no shhh hook.
+	notHooked := 0
+	for _, p := range r.Projects {
+		if p.Status == auditpkg.StatusUnprotected && (len(p.Leaked) > 0 || len(p.AtRisk) > 0) {
+			notHooked++
 		}
-		if len(actionable) > 0 {
-			fmt.Fprintf(&b, "  %s %s\n",
-				c.yellow("✗"),
-				c.yellow(fmt.Sprintf("%d secrets at risk — protect with:", s.SecretsAtRisk)))
-			b.WriteByte('\n')
-			for _, p := range actionable {
-				fmt.Fprintf(&b, "    cd %s && shhh install\n", p.DisplayPath)
-			}
-		} else {
-			fmt.Fprintf(&b, "  %s %s\n",
-				c.yellow("·"),
-				c.dim(fmt.Sprintf("%d secrets at risk in files under already-protected projects (fixtures or legacy state)", s.SecretsAtRisk)))
-		}
+	}
+	if notHooked > 0 {
+		fmt.Fprintf(&b, "  %s %s\n",
+			c.yellow("⚠"),
+			c.yellow(fmt.Sprintf("%d project%s NOT hooked — future sessions will leak", notHooked, plural(notHooked))))
+		b.WriteByte('\n')
+		fmt.Fprintln(&b, "  Hook all projects globally (recommended):")
+		fmt.Fprintln(&b, "    "+c.bold("shhh install claude-code"))
+		b.WriteByte('\n')
+		fmt.Fprintln(&b, c.dim("  Or hook one project at a time — see the HTML report for per-project commands."))
+	} else if s.SecretsAtRisk > 0 {
+		fmt.Fprintf(&b, "  %s %s\n",
+			c.yellow("·"),
+			c.dim(fmt.Sprintf("%d secrets present in files under hooked projects (will be redacted on next read)", s.SecretsAtRisk)))
 	}
 	if s.SecretsLeaked > 0 {
 		b.WriteByte('\n')
@@ -223,11 +211,11 @@ func formatDeltaLine(c colorizer, dc auditpkg.DeltaCount, counter string) string
 		arrow = "▲"
 		switch counter {
 		case "leaked":
-			comment = "new leaks"
+			comment = "newly detected"
 		case "at-risk":
-			comment = "newly at risk"
+			comment = "newly detected on disk"
 		case "protected":
-			comment = "project shielded"
+			comment = "project hooked"
 		}
 	}
 	mag := dc.Change
@@ -341,7 +329,20 @@ func writeProject(b *strings.Builder, c colorizer, p auditpkg.Project) {
 	}
 
 	if len(p.AtRisk) > 0 {
-		fmt.Fprintf(b, "   %s %s\n", "⚠️ ", c.yellow("Currently at risk"))
+		// On PROTECTED projects, the same findings are not "at risk":
+		// they are present in files on disk and shhh will redact them
+		// the next time Claude reads them. Flip the framing so the
+		// user reads this as proof shhh is doing its job, not as a
+		// failure.
+		var marker, label string
+		if p.Status == auditpkg.StatusProtected {
+			marker = "🔒"
+			label = c.green("Will be redacted when read")
+		} else {
+			marker = "⚠️ "
+			label = c.yellow("Not hooked — at risk on next session")
+		}
+		fmt.Fprintf(b, "   %s %s\n", marker, label)
 		for _, f := range p.AtRisk {
 			fmt.Fprintf(b, "      %s\n", c.yellow(f.Placeholder))
 			loc := ""
@@ -358,9 +359,9 @@ func writeProject(b *strings.Builder, c colorizer, p auditpkg.Project) {
 func statusTag(s auditpkg.Status) string {
 	switch s {
 	case auditpkg.StatusProtected:
-		return "[PROTECTED ✓]"
+		return "[HOOKED ✓]"
 	case auditpkg.StatusArchived:
-		return "[ARCHIVED]"
+		return "[FOLDER GONE]"
 	case auditpkg.StatusUnprotected:
 		return "[UNPROTECTED]"
 	case auditpkg.StatusClean:

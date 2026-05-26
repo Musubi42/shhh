@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>shhh bench — detection engine comparison</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0b;
+    --bg-raised: #141416;
+    --bg-input: #0e0e10;
+    --fg: #f5f1e8;
+    --fg-dim: #8a8680;
+    --fg-dimmer: #5a5854;
+    --rule: #2a2a2e;
+    --rule-strong: #3f3f44;
+    --legacy: #f5c518;
+    --gitleaks: #3aa1ff;
+    --both: #b779ff;
+    --shared: #50c878;
+    --accent: #3a5bff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); }
+  body {
+    font-family: 'Geist Mono', ui-monospace, SFMono-Regular, monospace;
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--fg);
+    padding: 2.5rem clamp(1.5rem, 5vw, 4rem) 6rem;
+    max-width: 1100px;
+    margin: 0 auto;
+    min-height: 100vh;
+    text-rendering: geometricPrecision;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1 {
+    font-size: 1.6rem;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    margin-bottom: 0.4rem;
+  }
+  h2 {
+    font-size: 1.05rem;
+    font-weight: 500;
+    color: var(--fg);
+    margin: 2.2rem 0 0.75rem;
+    letter-spacing: 0.01em;
+  }
+  .meta {
+    color: var(--fg-dim);
+    font-size: 0.85rem;
+    margin-bottom: 1.6rem;
+  }
+  .targets {
+    background: var(--bg-raised);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 0.8rem 1rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.85rem;
+    color: var(--fg-dim);
+  }
+  .targets b { color: var(--fg); font-weight: 500; }
+  .targets ul { list-style: none; margin-top: 0.4rem; }
+  .targets li { padding: 0.15rem 0; }
+  .targets li::before { content: "·  "; color: var(--fg-dimmer); }
+  .scan-root {
+    color: var(--fg-dimmer);
+    margin-top: 0.6rem;
+    font-size: 0.8rem;
+  }
+  .scan-root b { color: var(--fg-dim); font-weight: 500; }
+
+  table { width: 100%; border-collapse: collapse; margin-bottom: 1.5rem; }
+  th, td { text-align: left; padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--rule); }
+  th { font-weight: 500; color: var(--fg-dim); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; }
+  td.num { font-variant-numeric: tabular-nums; }
+  td.delta { color: var(--fg-dim); font-size: 0.82rem; }
+  .badge-engine {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .badge-engine.legacy { background: rgba(245, 197, 24, 0.12); color: var(--legacy); }
+  .badge-engine.gitleaks { background: rgba(58, 161, 255, 0.12); color: var(--gitleaks); }
+  .badge-engine.both { background: rgba(183, 121, 255, 0.12); color: var(--both); }
+
+  .agreement {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .agree-card {
+    background: var(--bg-raised);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--rule-strong);
+    border-radius: 4px;
+    padding: 0.9rem 1rem;
+  }
+  .agree-card.shared { border-left-color: var(--shared); }
+  .agree-card.legacy { border-left-color: var(--legacy); }
+  .agree-card.gitleaks { border-left-color: var(--gitleaks); }
+  .agree-count { font-size: 1.8rem; font-weight: 500; color: var(--fg); line-height: 1; margin-bottom: 0.3rem; }
+  .agree-label { font-size: 0.72rem; color: var(--fg-dim); text-transform: uppercase; letter-spacing: 0.1em; }
+  .agree-detail { margin-top: 0.6rem; font-size: 0.78rem; color: var(--fg-dim); line-height: 1.6; }
+  .agree-detail .lbl { color: var(--fg); font-variant-numeric: tabular-nums; }
+
+  .reco {
+    background: rgba(58, 91, 255, 0.06);
+    border-left: 3px solid var(--accent);
+    padding: 0.9rem 1.2rem;
+    font-size: 0.88rem;
+    margin: 1.2rem 0 1.6rem;
+    border-radius: 2px;
+  }
+
+  /* ─────────── Findings detail ─────────── */
+
+  .filter-bar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    margin: 0.75rem 0 0;
+    padding: 0.9rem 1rem;
+    background: rgba(10, 10, 11, 0.92);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    display: grid;
+    grid-template-columns: auto 1fr 1fr auto;
+    gap: 0.9rem;
+    align-items: center;
+    font-size: 0.82rem;
+  }
+  .filter-engines { display: flex; gap: 0.35rem; align-items: center; }
+  .filter-engines::before {
+    content: "engines";
+    color: var(--fg-dimmer);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-right: 0.2rem;
+  }
+  .chip {
+    cursor: pointer;
+    border: 1px solid var(--rule-strong);
+    background: transparent;
+    color: var(--fg-dim);
+    font-family: inherit;
+    font-size: 0.78rem;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0.18rem 0.55rem;
+    border-radius: 3px;
+    user-select: none;
+    transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+  }
+  .chip:hover { color: var(--fg); border-color: var(--fg-dim); }
+  .chip.active.legacy   { color: var(--legacy);   border-color: var(--legacy);   background: rgba(245, 197, 24, 0.10); }
+  .chip.active.gitleaks { color: var(--gitleaks); border-color: var(--gitleaks); background: rgba(58, 161, 255, 0.10); }
+  .chip.active.both     { color: var(--both);     border-color: var(--both);     background: rgba(183, 121, 255, 0.10); }
+
+  .filter-text { position: relative; display: flex; align-items: center; gap: 0.5rem; }
+  .filter-text label { color: var(--fg-dimmer); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; white-space: nowrap; }
+  .filter-text input {
+    flex: 1;
+    background: var(--bg-input);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    color: var(--fg);
+    font-family: inherit;
+    font-size: 0.82rem;
+    padding: 0.32rem 0.6rem;
+    outline: none;
+    transition: border-color 0.12s ease;
+    min-width: 0;
+  }
+  .filter-text input::placeholder { color: var(--fg-dimmer); }
+  .filter-text input:focus { border-color: var(--accent); }
+
+  .filter-stats { color: var(--fg-dim); font-size: 0.78rem; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+  .filter-stats b { color: var(--fg); font-weight: 500; }
+
+  /* Per-label evidence group. */
+  .findings-groups { margin-top: 0.75rem; }
+  details.f-label {
+    border-top: 1px solid var(--rule);
+    padding: 0;
+  }
+  details.f-label:last-of-type { border-bottom: 1px solid var(--rule); }
+  details.f-label summary,
+  details.f-file summary {
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+  }
+  details.f-label summary::-webkit-details-marker,
+  details.f-file summary::-webkit-details-marker { display: none; }
+  details.f-label summary::marker,
+  details.f-file summary::marker { content: ""; }
+
+  details.f-label > summary {
+    padding: 0.7rem 0.5rem;
+    display: grid;
+    grid-template-columns: 1.1rem 1fr auto auto;
+    gap: 0.8rem;
+    align-items: center;
+  }
+  details.f-label > summary:hover { background: rgba(245, 241, 232, 0.02); }
+  .f-label-disc { color: var(--fg-dimmer); font-size: 0.78rem; transition: transform 0.15s ease; text-align: center; }
+  details.f-label[open] > summary .f-label-disc { transform: rotate(90deg); color: var(--fg-dim); }
+  .f-label-name { color: var(--fg); font-size: 0.88rem; font-weight: 500; letter-spacing: 0.01em; }
+  .f-count { color: var(--fg-dim); font-variant-numeric: tabular-nums; font-size: 0.8rem; }
+  .f-count::before { content: "× "; color: var(--fg-dimmer); }
+  .f-engines { display: flex; gap: 0.25rem; }
+
+  /* File group nested inside a label. */
+  .f-label > .f-label-body { background: var(--bg-raised); border-top: 1px solid var(--rule); padding: 0.2rem 0 0.4rem 1.6rem; }
+  details.f-file {
+    border-bottom: 1px solid rgba(42, 42, 46, 0.4);
+  }
+  details.f-file:last-child { border-bottom: none; }
+  details.f-file > summary {
+    padding: 0.4rem 0.6rem 0.4rem 0.4rem;
+    display: grid;
+    grid-template-columns: 1rem 1fr auto auto;
+    gap: 0.6rem;
+    align-items: center;
+    color: var(--fg-dim);
+  }
+  details.f-file > summary:hover { background: rgba(245, 241, 232, 0.025); }
+  .f-file-disc { color: var(--fg-dimmer); font-size: 0.7rem; transition: transform 0.15s ease; text-align: center; }
+  details.f-file[open] > summary .f-file-disc { transform: rotate(90deg); color: var(--fg-dim); }
+  .f-file-path { color: var(--fg); font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
+
+  /* Pip — single-letter engine indicator. */
+  .pip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.1rem;
+    height: 1.1rem;
+    border-radius: 2px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    line-height: 1;
+  }
+  .pip.legacy   { background: rgba(245, 197, 24, 0.14); color: var(--legacy); }
+  .pip.gitleaks { background: rgba(58, 161, 255, 0.14); color: var(--gitleaks); }
+  .pip.both     { background: rgba(183, 121, 255, 0.14); color: var(--both); }
+  .pip.off {
+    background: transparent;
+    border: 1px solid var(--rule);
+    color: var(--fg-dimmer);
+  }
+  .pip.legacy.off   { color: rgba(245, 197, 24, 0.35); border-color: rgba(245, 197, 24, 0.18); }
+  .pip.gitleaks.off { color: rgba(58, 161, 255, 0.35); border-color: rgba(58, 161, 255, 0.18); }
+  .pip.both.off     { color: rgba(183, 121, 255, 0.35); border-color: rgba(183, 121, 255, 0.18); }
+
+  /* Finding row: line | snippet | pips. The file column is gone
+     — the parent file group header carries that information. */
+  .f-file-body { padding: 0.2rem 0.4rem 0.4rem 1.4rem; }
+  .f-row {
+    display: grid;
+    grid-template-columns: 3.5rem 1fr auto;
+    gap: 0.8rem;
+    align-items: baseline;
+    padding: 0.22rem 0.4rem;
+    font-size: 0.78rem;
+    border-bottom: 1px solid rgba(42, 42, 46, 0.3);
+  }
+  .f-row:last-child { border-bottom: none; }
+  .f-row-line {
+    color: var(--fg-dimmer);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+  .f-row-line::before { content: ":"; color: var(--fg-dimmer); }
+  .f-row-snippet {
+    color: var(--fg-dim);
+    font-size: 0.78rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    letter-spacing: -0.01em;
+    font-family: inherit;
+  }
+  .f-row-engines { display: flex; gap: 0.2rem; justify-self: end; }
+
+  .findings-empty, .load-fail {
+    text-align: center;
+    color: var(--fg-dim);
+    font-size: 0.85rem;
+    padding: 2rem 1rem;
+    border: 1px dashed var(--rule);
+    border-radius: 4px;
+    margin-top: 0.6rem;
+  }
+  .load-fail b { color: var(--fg); }
+  .load-fail code {
+    background: var(--bg-raised);
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    color: var(--fg);
+  }
+  [hidden] { display: none !important; }
+
+  footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--rule); color: var(--fg-dimmer); font-size: 0.75rem; }
+
+  @media (max-width: 760px) {
+    .filter-bar { grid-template-columns: 1fr; gap: 0.6rem; }
+    .filter-stats { text-align: left; }
+    .agreement { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<h1>shhh bench</h1>
+<div class="meta">Detection engine comparison · {{.Generated.Format "2006-01-02 15:04:05 UTC"}}</div>
+
+<!-- ─── Targets, summary, agreement, drill-down: all hydrated by JS ─── -->
+<div id="targets-block"></div>
+
+<h2>Engines</h2>
+<div id="engines-block"></div>
+
+<h2 id="agreement-heading" hidden>Agreement (legacy vs gitleaks)</h2>
+<div id="agreement-block"></div>
+<div id="reco-block"></div>
+
+<h2 id="findings-heading" hidden>Findings detail</h2>
+<div id="filter-bar-block"></div>
+<div id="findings-groups" class="findings-groups"></div>
+<div id="findings-empty" class="findings-empty" hidden>
+  No findings match the current filters. Toggle a chip or clear the search.
+</div>
+
+<div id="load-fail" class="load-fail" hidden>
+  <b>Could not load data.json.</b><br>
+  <span style="display:inline-block;margin-top:0.6rem;color:var(--fg-dim)">
+    Most browsers block <code>file://</code> fetches.
+    Run <code>shhh bench &lt;path&gt;</code> without <code>--no-serve</code> so the
+    local viewer serves this report properly,
+    or inspect <code>data.json</code> directly with <code>jq</code>.
+  </span>
+</div>
+
+<footer>
+  shhh bench · local-only · no data leaves this machine ·
+  raw secret values never appear — only typed placeholders.
+</footer>
+
+<script>
+(function() {
+  'use strict';
+
+  // ---- pip helpers ----------------------------------------------------
+  function pipLetter(engine) {
+    if (engine === 'legacy') return 'L';
+    if (engine === 'gitleaks') return 'G';
+    if (engine === 'both') return 'B';
+    return engine.charAt(0).toUpperCase();
+  }
+  function pipsHTML(active, all, titleSuffix) {
+    return all.map(eng => {
+      const on = active.includes(eng);
+      const cls = 'pip ' + eng + (on ? '' : ' off');
+      const title = eng + (on ? '' : (titleSuffix || ' (did not fire)'));
+      return '<span class="' + cls + '" title="' + title + '">' + pipLetter(eng) + '</span>';
+    }).join('');
+  }
+  function el(tag, attrs, html) {
+    const n = document.createElement(tag);
+    if (attrs) for (const k in attrs) n.setAttribute(k, attrs[k]);
+    if (html !== undefined) n.innerHTML = html;
+    return n;
+  }
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  // ---- renderers ------------------------------------------------------
+  function renderTargets(data) {
+    const lines = (data.targets || []).map(t => '<li>' + esc(t) + '</li>').join('');
+    let scan = '';
+    if (data.scanRootDisplay) {
+      scan = '<div class="scan-root"><b>Scan root:</b> ' + esc(data.scanRootDisplay) + '</div>';
+    }
+    document.getElementById('targets-block').innerHTML =
+      '<div class="targets">' +
+        '<b>Targets:</b> ' + data.filesScanned + ' files, ' + humanBytes(data.bytesScanned) +
+        '<ul>' + lines + '</ul>' +
+        scan +
+      '</div>';
+  }
+
+  function humanBytes(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+    if (n < 1073741824) return (n / 1048576).toFixed(1) + ' MB';
+    return (n / 1073741824).toFixed(2) + ' GB';
+  }
+  function shortDur(ms) {
+    if (ms < 1) return '< 1ms';
+    if (ms < 1000) return ms + 'ms';
+    return (ms / 1000).toFixed(2) + 's';
+  }
+
+  function renderEngines(data) {
+    const rows = data.engines.map((e, i) => {
+      let delta = '';
+      if (i > 0) {
+        const base = data.engines[0].durationMs;
+        if (base > 0) {
+          const pct = Math.round(100 * (e.durationMs - base) / base);
+          const sign = pct >= 0 ? '+' : '';
+          delta = sign + pct + '%';
+        }
+        if (e.name === 'both') delta += ' · returns legacy';
+      }
+      return '<tr>' +
+        '<td><span class="badge-engine ' + e.name + '">' + esc(e.name) + '</span></td>' +
+        '<td class="num">' + e.findings + '</td>' +
+        '<td class="num">' + shortDur(e.durationMs) + '</td>' +
+        '<td class="num">' + shortDur(e.perFileMs) + '</td>' +
+        '<td class="delta">' + esc(delta) + '</td>' +
+        '</tr>';
+    }).join('');
+    document.getElementById('engines-block').innerHTML =
+      '<table><thead><tr>' +
+        '<th>Engine</th><th>Findings</th><th>Time</th><th>Per-file</th><th>Δ vs first</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  function renderAgreement(data) {
+    const a = data.agreement;
+    if (!a) return;
+    document.getElementById('agreement-heading').hidden = false;
+    const lblBlock = (items) => items.length
+      ? items.map(it => '<span class="lbl">' + esc(it.label) + '×' + it.count + '</span>').join('<br>')
+      : '—';
+    document.getElementById('agreement-block').innerHTML =
+      '<div class="agreement">' +
+        card('shared', a.sharedTotal, 'shared', lblBlock(a.shared)) +
+        card('legacy', a.onlyLegacyTotal, 'only-legacy', lblBlock(a.onlyLegacy)) +
+        card('gitleaks', a.onlyGitleaksTotal, 'only-gitleaks', lblBlock(a.onlyGitleaks)) +
+      '</div>';
+    if (data.recommendation) {
+      document.getElementById('reco-block').innerHTML =
+        '<div class="reco">' + esc(data.recommendation) + '</div>';
+    }
+  }
+  function card(cls, count, label, detail) {
+    return '<div class="agree-card ' + cls + '">' +
+      '<div class="agree-count">' + count + '</div>' +
+      '<div class="agree-label">' + label + '</div>' +
+      '<div class="agree-detail">' + detail + '</div>' +
+    '</div>';
+  }
+
+  function renderFilterBar(engines) {
+    const chips = engines.map(e =>
+      '<button type="button" class="chip ' + e + ' active" data-engine="' + e + '" aria-pressed="true">' + pipLetter(e) + '</button>'
+    ).join('');
+    document.getElementById('filter-bar-block').innerHTML =
+      '<div class="filter-bar" role="search">' +
+        '<div class="filter-engines" role="group" aria-label="Filter by engine">' + chips + '</div>' +
+        '<div class="filter-text"><label for="filter-label">label</label><input id="filter-label" type="text" placeholder="HIGH_ENTROPY, stripe…" autocomplete="off" spellcheck="false"></div>' +
+        '<div class="filter-text"><label for="filter-file">file</label><input id="filter-file" type="text" placeholder="go.sum, .env…" autocomplete="off" spellcheck="false"></div>' +
+        '<div class="filter-stats" id="filter-stats"><b id="filter-visible">0</b> / <span id="filter-total">0</span></div>' +
+      '</div>';
+  }
+
+  function renderGroups(data) {
+    document.getElementById('findings-heading').hidden = false;
+    const allEngines = data.effectiveEngines || [];
+    const root = document.getElementById('findings-groups');
+    const frag = document.createDocumentFragment();
+
+    (data.labels || []).forEach(lg => {
+      const lDet = el('details', { class: 'f-label', 'data-label': lg.label.toLowerCase() });
+      const lSum = el('summary');
+      lSum.innerHTML =
+        '<span class="f-label-disc" aria-hidden="true">▸</span>' +
+        '<span class="f-label-name">' + esc(lg.label) + '</span>' +
+        '<span class="f-count">' + lg.count + '</span>' +
+        '<span class="f-engines">' + pipsHTML(lg.engines || [], allEngines, ' (never fires on this label)') + '</span>';
+      lDet.appendChild(lSum);
+      const lBody = el('div', { class: 'f-label-body' });
+
+      (lg.files || []).forEach(fg => {
+        const fDet = el('details', { class: 'f-file', 'data-file': fg.displayPath.toLowerCase() });
+        const fSum = el('summary');
+        fSum.innerHTML =
+          '<span class="f-file-disc" aria-hidden="true">▸</span>' +
+          '<span class="f-file-path" title="' + esc(fg.absPath) + '">' + esc(fg.displayPath) + '</span>' +
+          '<span class="f-count">' + fg.count + '</span>' +
+          '<span class="f-engines">' + pipsHTML(fg.engines || [], allEngines, ' (never fires in this file)') + '</span>';
+        fDet.appendChild(fSum);
+        const fBody = el('div', { class: 'f-file-body' });
+
+        (fg.findings || []).forEach(it => {
+          const row = el('div', { class: 'f-row', 'data-engines': (it.engines || []).join(' ') });
+          row.innerHTML =
+            '<span class="f-row-line">' + it.line + '</span>' +
+            '<code class="f-row-snippet">' + esc(it.snippet || it.placeholder) + '</code>' +
+            '<span class="f-row-engines">' + pipsHTML(it.engines || [], allEngines) + '</span>';
+          fBody.appendChild(row);
+        });
+        fDet.appendChild(fBody);
+        lBody.appendChild(fDet);
+      });
+      lDet.appendChild(lBody);
+      frag.appendChild(lDet);
+    });
+    root.appendChild(frag);
+  }
+
+  // ---- filter logic ---------------------------------------------------
+  function initFilters() {
+    const state = {
+      engines: new Set(),
+      label: '',
+      file: ''
+    };
+    const chips = Array.from(document.querySelectorAll('.filter-engines .chip'));
+    chips.forEach(c => state.engines.add(c.dataset.engine));
+
+    const labelInput = document.getElementById('filter-label');
+    const fileInput = document.getElementById('filter-file');
+    const visibleEl = document.getElementById('filter-visible');
+    const totalEl = document.getElementById('filter-total');
+    const emptyEl = document.getElementById('findings-empty');
+
+    const rows = Array.from(document.querySelectorAll('.f-row'));
+    const files = Array.from(document.querySelectorAll('details.f-file'));
+    const labels = Array.from(document.querySelectorAll('details.f-label'));
+    totalEl.textContent = rows.length;
+
+    function rowOK(row) {
+      if (state.engines.size === 0) return false;
+      const eng = (row.dataset.engines || '').split(' ');
+      return eng.some(e => state.engines.has(e));
+    }
+    function apply() {
+      let visible = 0;
+      labels.forEach(lg => {
+        const labelOk = !state.label || lg.dataset.label.includes(state.label);
+        let labelVisibleAny = false;
+        Array.from(lg.querySelectorAll('details.f-file')).forEach(fg => {
+          const fileOk = !state.file || fg.dataset.file.includes(state.file);
+          let fileVisibleAny = false;
+          Array.from(fg.querySelectorAll('.f-row')).forEach(row => {
+            const show = labelOk && fileOk && rowOK(row);
+            row.hidden = !show;
+            if (show) { visible++; fileVisibleAny = true; }
+          });
+          fg.hidden = !(labelOk && fileOk && fileVisibleAny);
+          if (!fg.hidden) labelVisibleAny = true;
+        });
+        lg.hidden = !labelVisibleAny;
+      });
+      visibleEl.textContent = visible;
+      emptyEl.hidden = visible !== 0;
+    }
+
+    chips.forEach(c => c.addEventListener('click', () => {
+      const e = c.dataset.engine;
+      if (state.engines.has(e)) {
+        state.engines.delete(e);
+        c.classList.remove('active');
+        c.setAttribute('aria-pressed', 'false');
+      } else {
+        state.engines.add(e);
+        c.classList.add('active');
+        c.setAttribute('aria-pressed', 'true');
+      }
+      apply();
+    }));
+    let t1, t2;
+    labelInput.addEventListener('input', () => {
+      clearTimeout(t1);
+      t1 = setTimeout(() => { state.label = labelInput.value.trim().toLowerCase(); apply(); }, 80);
+    });
+    fileInput.addEventListener('input', () => {
+      clearTimeout(t2);
+      t2 = setTimeout(() => { state.file = fileInput.value.trim().toLowerCase(); apply(); }, 80);
+    });
+    apply();
+  }
+
+  // ---- boot -----------------------------------------------------------
+  fetch('./data.json', { cache: 'no-store' })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+    .then(data => {
+      renderTargets(data);
+      renderEngines(data);
+      renderAgreement(data);
+      renderFilterBar(data.effectiveEngines || []);
+      renderGroups(data);
+      initFilters();
+    })
+    .catch(err => {
+      console.error('bench: data.json load failed:', err);
+      document.getElementById('load-fail').hidden = false;
+    });
+})();
+</script>
+
+</body>
+</html>

@@ -33,7 +33,11 @@ func Run(args []string) error {
 		return fmt.Errorf("resolve path: %w", err)
 	}
 
-	det := detector.New()
+	// Honour SHHH_DETECTOR so `shhh scan` is the calibration tool
+	// for the gitleaks migration (see docs/gitleaks-spike.md and
+	// docs/engine-architecture.md). Accepts shhh-native or
+	// gitleaks; unset/unknown falls back to shhh-native.
+	det := detector.NewFromEnv()
 	sc := scanner.New(det)
 	results, err := sc.Scan(abs)
 	if err != nil {

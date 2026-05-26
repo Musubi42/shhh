@@ -148,3 +148,25 @@ func TestCoversPathSubdirectory(t *testing.T) {
 		t.Error("expected /work/backend-other to NOT be covered (prefix trap)")
 	}
 }
+
+func TestPathUnderAny(t *testing.T) {
+	t.Parallel()
+	roots := []string{"/work/backend", "/home/me/repo"}
+	cases := []struct {
+		path string
+		want bool
+	}{
+		{"/work/backend", true},               // exact
+		{"/work/backend/sub/file", true},      // descendant
+		{"/work/backend-other", false},        // prefix trap
+		{"/work", false},                      // parent of root, not under it
+		{"/home/me/repo/deep/nested", true},   // second root match
+		{"/home/me/repository", false},        // sibling-like
+		{"/work/backend/", true},              // trailing slash
+	}
+	for _, tc := range cases {
+		if got := pathUnderAny(tc.path, roots); got != tc.want {
+			t.Errorf("pathUnderAny(%q) = %v, want %v", tc.path, got, tc.want)
+		}
+	}
+}

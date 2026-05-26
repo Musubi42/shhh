@@ -20,6 +20,23 @@ import (
 // one AuditItem per message. Unknown message types are skipped.
 type TranscriptSource struct {
 	claudeRoot string
+
+	// OnSessionDone, if non-nil, is called once per transcript file
+	// (= one Claude session) after Walk finishes reading it. Used by
+	// cmdaudit to drive the live "N/M sessions scanned" counter.
+	// Called from the source goroutine, so consumers must be safe
+	// to invoke from multiple goroutines if multiple sources share
+	// a callback.
+	OnSessionDone func()
+
+	// OnProjectDone, if non-nil, is called once per project directory
+	// after Walk finishes all its transcript files. dashName is the
+	// encoded directory name (matches Project.DashName); absPath is
+	// the resolved on-disk path the renderer can display directly.
+	// Used by cmdaudit to advance the live "N/M projects" counter
+	// and append scroll-log entries during the scan rather than at
+	// the end.
+	OnProjectDone func(dashName, absPath string, sessionsScanned int)
 }
 
 // NewTranscriptSource constructs a transcript source rooted at the
@@ -84,13 +101,14 @@ func (s *TranscriptSource) Walk(ctx context.Context, selectedProjects []string, 
 			}
 		}
 		projectDir := filepath.Join(projectsDir, dashName)
-		absPath := DecodeDashPath(dashName)
+		absPath := ResolveProjectPath(dashName, projectDir)
 
 		files, err := os.ReadDir(projectDir)
 		if err != nil {
 			log.Printf("transcripts: read project dir %s: %v", projectDir, err)
 			continue
 		}
+		sessionsScanned := 0
 		for _, f := range files {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -106,6 +124,13 @@ func (s *TranscriptSource) Walk(ctx context.Context, selectedProjects []string, 
 				}
 				log.Printf("transcripts: walk file %s: %v", filePath, err)
 			}
+			sessionsScanned++
+			if s.OnSessionDone != nil {
+				s.OnSessionDone()
+			}
+		}
+		if s.OnProjectDone != nil {
+			s.OnProjectDone(dashName, absPath, sessionsScanned)
 		}
 	}
 	return nil

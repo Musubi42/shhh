@@ -262,6 +262,60 @@
     transition: background 0.15s ease, padding-left 0.15s ease;
     cursor: pointer;
   }
+  .project.quiet {
+    opacity: 0.55;
+    padding: 1rem 0 1rem 0.25rem;
+  }
+  .project.quiet:hover {
+    opacity: 1;
+  }
+  details.quiet-projects {
+    margin: 2rem 0 1rem 0;
+    border-top: 1px solid var(--rule);
+    padding-top: 1.5rem;
+  }
+  details.quiet-projects summary {
+    cursor: pointer;
+    color: var(--fg-dim);
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+    padding: 0.5rem 0;
+    user-select: none;
+  }
+  details.quiet-projects summary:hover {
+    color: var(--fg);
+  }
+  .install-cta {
+    margin: 2.5rem 0;
+    padding: 1.5rem 1.75rem;
+    border: 1px solid var(--leaked);
+    border-radius: 4px;
+    background: var(--leaked-bg);
+  }
+  .install-cta-title {
+    color: var(--leaked);
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    font-size: 1rem;
+  }
+  .install-cta-body {
+    color: var(--fg-dim);
+    margin: 0 0 1rem 0;
+    font-size: 0.92rem;
+  }
+  .install-cta pre {
+    background: var(--bg);
+    color: var(--fg);
+    padding: 1rem;
+    border-radius: 3px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 0.88rem;
+    line-height: 1.55;
+    margin: 0;
+  }
+  .install-cta pre .cmd { color: var(--fg); font-weight: 600; }
+  .install-cta pre .comment { color: var(--fg-dim); }
   .project:hover {
     background: var(--bg-raised);
     padding-left: 1rem;
@@ -355,6 +409,32 @@
     color: var(--fg-dimmer);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
+  }
+
+  .project-cta {
+    margin-top: 0.7rem;
+    padding: 0.55rem 0.8rem;
+    background: rgba(58, 91, 255, 0.06);
+    border-left: 2px solid var(--accent);
+    border-radius: 2px;
+    font-size: 0.78rem;
+    display: flex;
+    gap: 0.6rem;
+    align-items: baseline;
+    flex-wrap: wrap;
+  }
+  .project-cta-label {
+    color: var(--fg-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.65rem;
+  }
+  .project-cta-cmd {
+    font-family: 'Geist Mono', monospace;
+    color: var(--fg);
+    user-select: all;
+    -webkit-user-select: all;
+    word-break: break-all;
   }
 
   .project-expand {
@@ -526,6 +606,25 @@
   </div>
   {{end}}
 
+  {{if .InstallCTA.NotHookedCount}}
+  <section class="install-cta">
+    <div class="install-cta-title">
+      ⚠ {{.InstallCTA.NotHookedCount}} project{{if ne .InstallCTA.NotHookedCount 1}}s{{end}} not hooked — future sessions will leak
+    </div>
+    <p class="install-cta-body">
+      shhh is not protecting these projects yet. Install it once globally
+      to cover every Claude Code session on this machine (recommended), or
+      per project to keep it scoped.
+    </p>
+    <pre><span class="comment"># Hook everything globally (recommended):</span>
+<span class="cmd">{{.InstallCTA.GlobalCommand}}</span>{{if .InstallCTA.ProjectExamples}}
+
+<span class="comment"># Or hook one project at a time:</span>
+{{range .InstallCTA.ProjectExamples}}<span class="cmd">{{.Command}}</span>
+{{end}}{{end}}</pre>
+  </section>
+  {{end}}
+
   <h2 class="section-title">
     Projects
     <span class="count">· {{.SectionTitle}}</span>
@@ -552,6 +651,12 @@
         {{end}}
       </div>
       {{end}}
+      {{if .InstallCommand}}
+      <div class="project-cta">
+        <span class="project-cta-label">protect this repo:</span>
+        <code class="project-cta-cmd">{{.InstallCommand}}</code>
+      </div>
+      {{end}}
     </div>
     <span class="project-expand">→</span>
   </a>
@@ -567,6 +672,26 @@
   </div>
   {{end}}
 
+  {{if .QuietProjects}}
+  <details class="quiet-projects">
+    <summary>{{len .QuietProjects}} project{{if ne (len .QuietProjects) 1}}s{{end}} with no findings — click to expand</summary>
+    {{range .QuietProjects}}
+    <a class="project quiet" href="projects/{{.Slug}}.html">
+      <span class="badge {{.BadgeClass}}">{{.BadgeLabel}}</span>
+      <div class="project-body">
+        <div class="project-path">{{.DisplayPath}}</div>
+        <div class="project-summary">
+          {{range $i, $part := .SummaryParts}}{{if $i}}
+          <span class="sep">·</span>
+          {{end}}<span>{{$part}}</span>{{end}}
+        </div>
+      </div>
+      <span class="project-expand">→</span>
+    </a>
+    {{end}}
+  </details>
+  {{end}}
+
   {{if .HasLeakedAnywhere}}
   <section class="footer-action">
     <div class="footer-action-title">Rotate {{.Footer.LeakedCount}} leaked secret{{if ne .Footer.LeakedCount 1}}s{{end}} now</div>
@@ -579,7 +704,7 @@
 {{range .Footer.RotationDashboards}}<span class="cmd">{{.Vendor}}</span>    →  <a href="{{.URL}}">{{.URL}}</a>
 {{end}}{{end}}{{if .Footer.UnprotectedProjects}}
 <span class="comment"># protect the {{.Footer.AtRiskCount}} at-risk project{{if ne .Footer.AtRiskCount 1}}s{{end}} so the next session can't leak them</span>
-{{range .Footer.UnprotectedProjects}}<span class="cmd">cd</span> {{.DisplayPath}} &amp;&amp; <span class="cmd">shhh install</span>
+{{range .Footer.UnprotectedProjects}}<span class="cmd">{{.Command}}</span>
 {{end}}{{end}}</pre>
   </section>
   {{end}}

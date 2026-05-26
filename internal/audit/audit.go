@@ -146,16 +146,97 @@ type DeltaCount struct {
 // SelectedProjects is the opt-in list of project dash-names to audit.
 // Empty means "audit every project ~/.claude/projects/ knows about."
 //
-// Progress, if non-nil, is called periodically with (sourceName,
-// itemCount) so CLI callers can render a live spinner. Set to nil
-// in tests and non-interactive paths.
+// OnProgress, if non-nil, is called from inside Run as the audit
+// progresses. It receives typed events the renderer uses to drive
+// the live "scrolling log + footer" terminal UI. Set to nil in tests
+// and non-interactive paths. See ProgressEvent for the event shape.
 type Config struct {
 	Agent            string // "claude-code"
 	ClaudeRoot       string // usually ~/.claude, overrideable for tests
 	SelectedProjects []string
-	ShhhConfigPath   string // usually ~/.shhh/config.json, overrideable
-	AuditDir         string // usually ~/.shhh/audits, overrideable
-	Progress         func(sourceName string, count int)
+	// IgnoredPaths is the user's persistent skip list (loaded by
+	// cmdaudit from ~/.shhh/config.json before calling Run). Projects
+	// whose absolute path matches an entry exactly are dropped before
+	// any scanning happens — they don't appear in counts, don't
+	// trigger transcript reads, don't show up in the report. Empty
+	// list means audit everything.
+	IgnoredPaths []string
+	// ScopePaths is the per-run "only include projects under these
+	// roots" allow-list. Each entry is an absolute path. A project
+	// passes the filter if its AbsPath equals an entry or lives under
+	// one. Empty means "no scope restriction" (the default — audit
+	// every project that survives IgnoredPaths).
+	//
+	// This is distinct from SelectedProjects (which matches by Claude
+	// dash-name) and IgnoredPaths (deny list, persisted). ScopePaths
+	// is the CLI-positional `shhh audit <path>...` filter, ephemeral
+	// to one run.
+	ScopePaths     []string
+	ShhhConfigPath string // usually ~/.shhh/config.json, overrideable
+	AuditDir       string // usually ~/.shhh/audits, overrideable
+	OnProgress     func(ProgressEvent)
+}
+
+// ProgressKind labels the kind of progress event being emitted.
+type ProgressKind int
+
+const (
+	// ProgressEnumerated fires once, right after the project list is
+	// known. ProjectsTotal and SessionsTotal are populated.
+	ProgressEnumerated ProgressKind = iota + 1
+	// ProgressSourceCount fires periodically from drainSources. Source
+	// and Count are populated. Cumulative count, not delta.
+	ProgressSourceCount
+	// ProgressSessionFinished fires once per Claude transcript file
+	// (one user session) after it has been fully read. The renderer
+	// uses this to drive the "N/M sessions scanned" counter.
+	ProgressSessionFinished
+	// ProgressProjectScanned fires once per project after all its
+	// transcripts have been read by TranscriptSource. Findings are
+	// not yet aggregated at this point — the renderer uses this as a
+	// "we just finished one project's transcripts" signal to advance
+	// the live project counter and append a tentative scroll entry.
+	// ProjectIndex / ProjectDisplay are NOT populated (we only know
+	// the dashName at this stage); the renderer is expected to map it
+	// from a registry built at ProgressEnumerated time.
+	ProgressProjectScanned
+	// ProgressFinding fires once per distinct (placeholder, project)
+	// pair the aggregator sees, so the renderer can tick the "leaked
+	// so far" counter live instead of waiting for Finalize().
+	ProgressFinding
+	// ProgressProjectFinished fires once per project after its
+	// findings are finalised and status is decided. Project*, Sessions,
+	// Leaked, AtRisk, and Status are populated.
+	ProgressProjectFinished
+	// ProgressDone fires once when Run is about to return.
+	ProgressDone
+)
+
+// ProgressEvent is the unit of progress reporting. A single struct
+// rather than a sum type so the channel signature stays trivial.
+// Unused fields are zero values; renderers should switch on Kind.
+type ProgressEvent struct {
+	Kind ProgressKind
+
+	// ProgressEnumerated:
+	ProjectsTotal int
+	SessionsTotal int
+
+	// ProgressSourceCount:
+	Source string
+	Count  int
+
+	// ProgressProjectFinished:
+	ProjectIndex   int    // 0-based among the enumerated projects
+	ProjectDisplay string // tilde-shortened display path
+	Sessions       int    // session count for this project
+	Leaked         int    // distinct secrets already leaked
+	AtRisk         int    // distinct secrets in files on disk
+	Status         Status // Protected / Unprotected / Archived / Clean
+
+	// ProgressProjectScanned / ProgressFinding:
+	ProjectDashName string // identifies the project for both events
+	Placeholder     string // only set for ProgressFinding
 }
 
 // CurrentSchemaVersion is the version Result is stamped with when

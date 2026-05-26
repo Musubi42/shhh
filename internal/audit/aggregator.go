@@ -40,6 +40,14 @@ type aggregator struct {
 	// findings is every raw observation, flat. The grouping happens
 	// in Finalize once all sources are drained.
 	findings []rawFinding
+
+	// onFinding, if non-nil, is called once per unique (placeholder,
+	// project) pair as Process discovers it. Used by cmdaudit to tick
+	// a live "leaked so far" counter without waiting for Finalize().
+	// Called while the aggregator mutex is held — callbacks must be
+	// fast and must not call back into the aggregator.
+	onFinding func(placeholder, projectDashName string)
+	seen      map[string]bool
 }
 
 func newAggregator() *aggregator {
@@ -48,7 +56,14 @@ func newAggregator() *aggregator {
 		redactor: redactor.New(detector.New(), sess),
 		sess:     sess,
 		findings: make([]rawFinding, 0, 128),
+		seen:     make(map[string]bool, 64),
 	}
+}
+
+// SetOnFinding wires a live-counter callback. Must be called before
+// Process. Safe to leave nil for tests / non-interactive paths.
+func (a *aggregator) SetOnFinding(fn func(placeholder, projectDashName string)) {
+	a.onFinding = fn
 }
 
 // Process runs the detector over one AuditItem and records any
@@ -102,6 +117,13 @@ func (a *aggregator) Process(item AuditItem) {
 			location:       item.Location,
 			timestamp:      item.Timestamp,
 		})
+		if a.onFinding != nil {
+			key := placeholder + "@" + item.ProjectDashName
+			if !a.seen[key] {
+				a.seen[key] = true
+				a.onFinding(placeholder, item.ProjectDashName)
+			}
+		}
 	}
 }
 

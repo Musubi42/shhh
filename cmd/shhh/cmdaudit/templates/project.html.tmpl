@@ -478,15 +478,29 @@
 
   {{if .HasAtRisk}}
   <section class="section">
-    <h2 class="section-title at-risk">
-      <span class="marker"></span>Currently at risk
+    {{if .IsHooked}}
+    <h2 class="section-title protected">
+      <span class="marker"></span>🔒 Will be redacted on next read
       <span class="count">{{.AtRiskCount}} secret{{if ne .AtRiskCount 1}}s{{end}} · in project files</span>
     </h2>
     <p class="section-blurb">
-      Found in files that Claude Code would read on its next session. shhh
-      is not installed in this project yet, so the next read will leak
-      them. Install shhh here or move them out of plaintext.
+      Found in files Claude Code would read on its next session. shhh is
+      hooked on this project, so each read will replace these values with
+      a typed placeholder before they reach the model. No action needed —
+      this list is shown as proof shhh is doing its job.
     </p>
+    {{else}}
+    <h2 class="section-title at-risk">
+      <span class="marker"></span>At risk on next session
+      <span class="count">{{.AtRiskCount}} secret{{if ne .AtRiskCount 1}}s{{end}} · in project files</span>
+    </h2>
+    <p class="section-blurb">
+      Found in files Claude Code would read on its next session. shhh is
+      NOT hooked on this project yet, so the next read will leak these
+      values. Install shhh here (see the install snippet below) or move
+      them out of plaintext.
+    </p>
+    {{end}}
 
     <div class="secrets-table">
       {{range .AtRiskSecrets}}

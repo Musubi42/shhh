@@ -60,7 +60,9 @@ type overviewViewModel struct {
 	SectionTitle string
 
 	VisibleProjects   []projectRowVM
+	QuietProjects     []projectRowVM // no findings — rendered in a collapsed group
 	HasLeakedAnywhere bool
+	InstallCTA        installCTAVM // top-level install block (empty when nothing to suggest)
 
 	Footer footerVM
 
@@ -94,6 +96,14 @@ type projectRowVM struct {
 	DisplayPath  string
 	SummaryParts []string
 	Secrets      []secretLineVM
+	HasLeaked    bool // any leaked findings on this project
+	HasAtRisk    bool // any on-disk findings on this project
+
+	// InstallCommand is a copy-paste-ready shell command that installs
+	// shhh into THIS project specifically. Populated only when the
+	// project is OnDisk and not yet hooked — otherwise empty and the
+	// template suppresses the mini-CTA block.
+	InstallCommand string
 }
 
 type secretLineVM struct {
@@ -110,8 +120,23 @@ type footerVM struct {
 	RotationDashboards  []rotationLinkVM
 }
 
+// installCTAVM drives the top-level "Install shhh" block above the
+// per-project list. NotHookedCount=0 means the user is fully hooked
+// (or no findings exist) and the block can be hidden.
+type installCTAVM struct {
+	NotHookedCount  int
+	GlobalCommand   string // copy-paste-ready single command
+	ProjectExamples []installProjectExampleVM
+}
+
+type installProjectExampleVM struct {
+	DisplayPath string
+	Command     string
+}
+
 type unprotectedVM struct {
 	DisplayPath string
+	Command     string // copy-paste-ready `shhh install claude-code <path>`
 }
 
 type rotationLinkVM struct {
@@ -128,6 +153,7 @@ type projectViewModel struct {
 	BasePart    string
 	BadgeClass  string
 	BadgeLabel  string
+	IsHooked    bool // drives the "Will be redacted" vs "At risk" wording on the at-risk section
 
 	SessionsTotal int
 	LeakedCount   int
@@ -256,16 +282,15 @@ func newOverviewViewModel(r *auditpkg.Result, slugs map[string]string) overviewV
 		vm.Agent = "UNKNOWN"
 	}
 
-	// Aggregate session counts and time span.
-	var earliest time.Time
+	// Aggregate session counts. We previously also computed a
+	// "history spans X days" using min(p.FirstSeen) but the value was
+	// misleading: FirstSeen is the earliest detected leak timestamp,
+	// not the earliest session, so on a leak-free history it returned
+	// 0 and on a leaky history it returned the lifetime of the
+	// oldest secret rather than the audit scope. Dropped in favour
+	// of no claim at all.
 	for _, p := range r.Projects {
 		vm.SessionCount += p.SessionsTotal
-		if !p.FirstSeen.IsZero() && (earliest.IsZero() || p.FirstSeen.Before(earliest)) {
-			earliest = p.FirstSeen
-		}
-	}
-	if !earliest.IsZero() && !r.AuditTime.IsZero() {
-		vm.SpanDescription = describeSpan(r.AuditTime.Sub(earliest))
 	}
 
 	// Counter cards.
@@ -306,18 +331,20 @@ func newOverviewViewModel(r *auditpkg.Result, slugs map[string]string) overviewV
 	vm.SectionTitle = fmt.Sprintf("%d need attention · %d clean · %d archived",
 		needAttention, r.Summary.ProjectsClean, r.Summary.ProjectsArchived)
 
-	// Project rows: include any project that has findings, ordered
-	// leaked-first then at-risk-only, then by path for stability.
+	// Project rows: include EVERY project the audit knows about, not
+	// just those with findings. Users asked to see the full picture
+	// during the v0.2 dryrun ("if it scanned 23, show 23"). The
+	// template groups them: actionable ones (leaked/at-risk) render
+	// inline, no-finding ones collapse into a foldable group so they
+	// don't dominate the page.
 	rows := make([]projectRowVM, 0, len(r.Projects))
 	for i := range r.Projects {
 		p := &r.Projects[i]
-		if len(p.Leaked) == 0 && len(p.AtRisk) == 0 {
-			continue
-		}
 		rows = append(rows, buildProjectRow(p, slugs[p.AbsPath]))
 	}
 	sort.SliceStable(rows, func(i, j int) bool {
-		// Unprotected first, then others, then archived; alphabetic within.
+		// Unprotected with findings first, then others, then archived;
+		// alphabetic within.
 		rank := func(b string) int {
 			switch b {
 			case "unprotected":
@@ -335,13 +362,54 @@ func newOverviewViewModel(r *auditpkg.Result, slugs map[string]string) overviewV
 		}
 		return rows[i].DisplayPath < rows[j].DisplayPath
 	})
-	vm.VisibleProjects = rows
+
+	// Partition into "actionable" (has findings) vs "quiet" (no
+	// findings — either Clean or Archived-without-history). The
+	// template renders them in separate sections.
+	vm.VisibleProjects = vm.VisibleProjects[:0]
+	vm.QuietProjects = vm.QuietProjects[:0]
+	for _, row := range rows {
+		if row.HasLeaked || row.HasAtRisk {
+			vm.VisibleProjects = append(vm.VisibleProjects, row)
+		} else {
+			vm.QuietProjects = append(vm.QuietProjects, row)
+		}
+	}
 
 	// Footer action block.
 	vm.HasLeakedAnywhere = r.Summary.SecretsLeaked > 0
 	vm.Footer = buildFooter(r)
+	vm.InstallCTA = buildInstallCTA(r)
 
 	return vm
+}
+
+// buildInstallCTA assembles the top-level install block: the global
+// one-liner plus up to three per-project example commands the user
+// can copy-paste. Returns a zero value if there's nothing to suggest
+// (no unhooked projects with findings).
+func buildInstallCTA(r *auditpkg.Result) installCTAVM {
+	var cta installCTAVM
+	for _, p := range r.Projects {
+		if p.Status != auditpkg.StatusUnprotected {
+			continue
+		}
+		if len(p.Leaked) == 0 && len(p.AtRisk) == 0 {
+			continue
+		}
+		cta.NotHookedCount++
+		if len(cta.ProjectExamples) < 3 && p.OnDisk {
+			cta.ProjectExamples = append(cta.ProjectExamples, installProjectExampleVM{
+				DisplayPath: p.DisplayPath,
+				Command:     fmt.Sprintf("shhh install claude-code %s", shellQuote(p.AbsPath)),
+			})
+		}
+	}
+	if cta.NotHookedCount == 0 {
+		return installCTAVM{}
+	}
+	cta.GlobalCommand = "shhh install claude-code"
+	return cta
 }
 
 func buildProjectRow(p *auditpkg.Project, slug string) projectRowVM {
@@ -350,6 +418,14 @@ func buildProjectRow(p *auditpkg.Project, slug string) projectRowVM {
 		DisplayPath: p.DisplayPath,
 		BadgeClass:  string(p.Status),
 		BadgeLabel:  badgeLabelFor(p.Status),
+		HasLeaked:   len(p.Leaked) > 0,
+		HasAtRisk:   len(p.AtRisk) > 0,
+	}
+	// Surface a copy-paste-ready install line on unhooked projects
+	// that still exist on disk. Archived (folder-gone) cards skip
+	// this — there's nothing to install into.
+	if p.Status == auditpkg.StatusUnprotected && p.OnDisk {
+		row.InstallCommand = fmt.Sprintf("shhh install claude-code %s", shellQuote(p.AbsPath))
 	}
 
 	// Summary parts: leaked count, at-risk count, then session info.
@@ -370,7 +446,7 @@ func buildProjectRow(p *auditpkg.Project, slug string) projectRowVM {
 			installed = fmt.Sprintf("shhh installed %s · ", p.ShhhInstalledAt.UTC().Format("2006-01-02"))
 		}
 		row.SummaryParts = append(row.SummaryParts,
-			fmt.Sprintf("%s%d session%s protected since", installed, p.SessionsTotal, plural(p.SessionsTotal)))
+			fmt.Sprintf("%s%d session%s scanned", installed, p.SessionsTotal, plural(p.SessionsTotal)))
 	default:
 		first := ""
 		if !p.FirstSeen.IsZero() {
@@ -459,8 +535,10 @@ func buildFooter(r *auditpkg.Result) footerVM {
 			continue
 		}
 		seenProj[p.DisplayPath] = true
-		f.UnprotectedProjects = append(f.UnprotectedProjects,
-			unprotectedVM{DisplayPath: p.DisplayPath})
+		f.UnprotectedProjects = append(f.UnprotectedProjects, unprotectedVM{
+			DisplayPath: p.DisplayPath,
+			Command:     fmt.Sprintf("shhh install claude-code %s", shellQuote(p.AbsPath)),
+		})
 	}
 	sort.Slice(f.RotationDashboards, func(i, j int) bool {
 		return f.RotationDashboards[i].Vendor < f.RotationDashboards[j].Vendor
@@ -481,6 +559,7 @@ func newProjectViewModel(r *auditpkg.Result, p *auditpkg.Project) projectViewMod
 		BasePart:       base,
 		BadgeClass:     string(p.Status),
 		BadgeLabel:     badgeLabelFor(p.Status),
+		IsHooked:       p.Status == auditpkg.StatusProtected,
 		SessionsTotal:  p.SessionsTotal,
 		LeakedCount:    len(p.Leaked),
 		AtRiskCount:    len(p.AtRisk),
@@ -581,9 +660,8 @@ func buildProjectActions(p *auditpkg.Project) projectActionsVM {
 		lines = append(lines,
 			template.HTML(`<span class="comment"># step 2 · protect this project</span>`))
 		lines = append(lines,
-			template.HTML(fmt.Sprintf(`<span class="cmd">cd</span> %s`, template.HTMLEscapeString(p.DisplayPath))))
-		lines = append(lines,
-			template.HTML(`<span class="cmd">shhh install</span>`))
+			template.HTML(fmt.Sprintf(`<span class="cmd">shhh install claude-code</span> %s`,
+				template.HTMLEscapeString(shellQuote(p.AbsPath)))))
 		lines = append(lines, template.HTML(""))
 		lines = append(lines,
 			template.HTML(`<span class="comment"># step 3 · verify — next shhh audit should show this project as Protected</span>`))
@@ -604,11 +682,11 @@ func buildProjectActions(p *auditpkg.Project) projectActionsVM {
 func badgeLabelFor(s auditpkg.Status) string {
 	switch s {
 	case auditpkg.StatusUnprotected:
-		return "Unprotected"
+		return "Not hooked"
 	case auditpkg.StatusProtected:
-		return "Protected ✓"
+		return "Hooked ✓"
 	case auditpkg.StatusArchived:
-		return "Archived"
+		return "Folder gone"
 	case auditpkg.StatusClean:
 		return "Clean"
 	}
@@ -630,31 +708,6 @@ func formatScanDuration(d time.Duration) string {
 		return fmt.Sprintf("%dms", d.Milliseconds())
 	}
 	return fmt.Sprintf("%.1fs", d.Seconds())
-}
-
-func describeSpan(d time.Duration) string {
-	days := int(d.Hours() / 24)
-	switch {
-	case days < 1:
-		return ""
-	case days < 30:
-		if days == 1 {
-			return "1 day"
-		}
-		return fmt.Sprintf("%d days", days)
-	case days < 365:
-		m := days / 30
-		if m == 1 {
-			return "1 month"
-		}
-		return fmt.Sprintf("%d months", m)
-	default:
-		y := days / 365
-		if y == 1 {
-			return "1 year"
-		}
-		return fmt.Sprintf("%d years", y)
-	}
 }
 
 // formatCounterDelta returns the "▼ 3 · since YYYY-MM-DD" string and the
@@ -708,10 +761,10 @@ func makeDeltaLine(emoji, label string, dc auditpkg.DeltaCount, downIsGood bool)
 	case dc.Change > 0:
 		if downIsGood {
 			line.Class = "up"
-			line.Comment = fmt.Sprintf("+%d new", dc.Change)
+			line.Comment = fmt.Sprintf("+%d newly detected", dc.Change)
 		} else {
 			line.Class = "down"
-			line.Comment = fmt.Sprintf("+%d new", dc.Change)
+			line.Comment = fmt.Sprintf("+%d newly detected", dc.Change)
 		}
 	default:
 		line.Class = "flat"
@@ -789,6 +842,38 @@ func displayURL(raw string) string {
 		return host
 	}
 	return raw
+}
+
+// shellQuote returns a POSIX-shell-safe quoted form of s. Plain
+// alphanumerics, dashes, slashes, dots, underscores, and ~ pass
+// through unchanged; anything else triggers single-quoting with the
+// `'\''` trick for embedded single quotes. Keeps the most common
+// (paths under $HOME) readable while protecting paths with spaces or
+// shell metacharacters from being misparsed when the user copies the
+// CTA into a terminal.
+func shellQuote(s string) string {
+	if s == "" {
+		return "''"
+	}
+	safe := true
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z',
+			r >= 'A' && r <= 'Z',
+			r >= '0' && r <= '9',
+			r == '-', r == '_', r == '/', r == '.', r == '~', r == '+', r == ':', r == '@':
+			// pass
+		default:
+			safe = false
+		}
+		if !safe {
+			break
+		}
+	}
+	if safe {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // writeAtomic writes data to path via a tmp file + rename so readers

@@ -8,6 +8,8 @@ import (
 	"os"
 
 	"github.com/Musubi42/shhh/cmd/shhh/cmdaudit"
+	"github.com/Musubi42/shhh/cmd/shhh/cmdbench"
+	"github.com/Musubi42/shhh/cmd/shhh/cmddoctor"
 	"github.com/Musubi42/shhh/cmd/shhh/cmdhook"
 	"github.com/Musubi42/shhh/cmd/shhh/cmdinstall"
 	"github.com/Musubi42/shhh/cmd/shhh/cmdredact"
@@ -62,6 +64,10 @@ func main() {
 		err = cmdinstall.RunInstall(os.Args[2:])
 	case "uninstall":
 		err = cmdinstall.RunUninstall(os.Args[2:])
+	case "doctor":
+		err = cmddoctor.Run(os.Args[2:])
+	case "bench":
+		err = cmdbench.Run(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println("shhh", version)
 		return
@@ -84,16 +90,23 @@ func usage() {
 
 Usage:
   shhh install                        Interactive installer (recommended)
-  shhh install claude-code            Non-interactive install into Claude Code
-  shhh uninstall claude-code          Remove the shhh hook from Claude Code
+  shhh install claude-code            Non-interactive install — global by default
+    --scope global|project             Default: global (~/.claude). Project = <cwd>/.claude
+    --cwd <path>                       For --scope project, the project root (default: $PWD)
+  shhh uninstall claude-code          Remove the shhh hook (mirrors install flags)
 
   shhh hook claude-code               Hook entry point (invoked by Claude Code, not you)
 
   shhh audit                          Forensic audit of what Claude Code has seen
+    (interactive project picker by default — TTY only)
+    --no-select                        Skip the picker, audit every non-ignored project
     --no-serve                         Terminal only, no HTML, no server
     --html-only                        Write HTML to disk, no server
     --open                             Default + launch browser
     --json                             Machine-readable JSON to stdout
+  shhh audit ignore <abs-path>        Persist a project skip
+  shhh audit unignore <abs-path>      Reverse the above
+  shhh audit ignored                  Print the current ignore list
 
   shhh scan [path]                    Scan a directory for secrets (default: .)
     --show-details                     Show host/user details (local only)
@@ -102,6 +115,15 @@ Usage:
   shhh redact <file>                  Redact a file, print to stdout
     --rehydrate                        Reverse operation
     --session <id>                     Use per-session placeholder store
+
+  shhh doctor                         Health check (config, hooks, binary)
+    --fix                              Drop stale installed_paths entries
+
+  shhh bench <path>... [flags]        Compare detection engines on real files
+    --engines=shhh-native,gitleaks     Subset to compare (default: both)
+    --no-serve                         Write HTML to disk, no server
+    --no-html                          Terminal only, no HTML
+    --open                             Default + launch browser
 
   shhh version                        Print version
   shhh help                           Show this message

@@ -93,7 +93,13 @@ func LoadRedactor(sessionID string) (*redactor.Redactor, func() error, error) {
 		return nil, nil, fmt.Errorf("read session store: %w", err)
 	}
 
-	r := redactor.New(detector.New(), sess)
+	// Honour SHHH_DETECTOR=shhh-native|gitleaks. Hook is the
+	// primary integration surface — every Read/Bash call from the
+	// agent passes through this redactor. The factory falls back
+	// to shhh-native if SHHH_DETECTOR is unset/unknown or if
+	// gitleaks fails to initialise. Phase 2 will replace this
+	// env-var path with a Config-driven multi-engine selector.
+	r := redactor.New(detector.NewFromEnv(), sess)
 
 	save := func() error {
 		salt, entries := sess.Snapshot()

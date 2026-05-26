@@ -27,10 +27,18 @@ type Plan struct {
 	// Unknown agents cause Execute to fail with a clear error.
 	Agents []string
 
-	// Cwd is the directory used when Scope == ScopeProject. Ignored
-	// otherwise. Must be an absolute path when the caller wants
-	// reproducible behavior; Execute takes it as-is.
+	// Cwd is the single-project directory used when Scope == ScopeProject
+	// and ProjectPaths is empty. Ignored otherwise. Kept for the
+	// scripted `shhh install claude-code --scope project --cwd X` path
+	// where one cwd is the natural unit.
 	Cwd string
+
+	// ProjectPaths is the multi-project variant of Cwd. When Scope ==
+	// ScopeProject and this list is non-empty, Execute installs the
+	// hook into <path>/.claude/settings.json for each entry. Cwd is
+	// ignored in that case. The interactive picker populates this when
+	// the user multi-selects projects from ~/.claude/projects history.
+	ProjectPaths []string
 
 	// RunScan, when true, runs `shhh scan <cwd-or-.>` after the install
 	// step completes. Currently defaults to false (installer opt-in).
@@ -67,10 +75,24 @@ func (p *Plan) Validate() error {
 			return fmt.Errorf("plan: agent %q is not supported yet", a)
 		}
 	}
-	if p.Scope == ScopeProject && p.Cwd == "" {
-		return fmt.Errorf("plan: project scope requires cwd")
+	if p.Scope == ScopeProject && p.Cwd == "" && len(p.ProjectPaths) == 0 {
+		return fmt.Errorf("plan: project scope requires cwd or project paths")
 	}
 	return nil
+}
+
+// projectTargets returns the list of project root directories the
+// plan applies to. For global scope this is a single empty string
+// (Cwd is unused). For project scope it's ProjectPaths when set,
+// else a single-element slice with Cwd.
+func (p *Plan) projectTargets() []string {
+	if p.Scope != ScopeProject {
+		return []string{""}
+	}
+	if len(p.ProjectPaths) > 0 {
+		return p.ProjectPaths
+	}
+	return []string{p.Cwd}
 }
 
 // Execute applies the plan. For each selected agent it resolves the
@@ -105,19 +127,22 @@ func (p *Plan) Execute(binary string, out io.Writer) error {
 	// project in a re-run actually drops it from the audit scope.
 	cfg.SelectedProjects = append([]string{}, p.SelectedProjects...)
 
+	targets := p.projectTargets()
 	for _, agent := range p.Agents {
-		path, err := AgentSettingsPath(agent, p.Scope, p.Cwd)
-		if err != nil {
-			return fmt.Errorf("resolve %s settings path: %w", agent, err)
-		}
-		diff, err := Install(path, binary)
-		if err != nil {
-			return fmt.Errorf("install %s: %w", agent, err)
-		}
-		cfg.AddInstalledPath(path)
-		fmt.Fprintf(out, "✓ %s: %s\n", agent, path)
-		if diff == "" {
-			fmt.Fprintf(out, "  (already configured — no changes)\n")
+		for _, target := range targets {
+			path, err := AgentSettingsPath(agent, p.Scope, target)
+			if err != nil {
+				return fmt.Errorf("resolve %s settings path: %w", agent, err)
+			}
+			diff, err := Install(path, binary)
+			if err != nil {
+				return fmt.Errorf("install %s: %w", agent, err)
+			}
+			cfg.AddInstalledPath(path)
+			fmt.Fprintf(out, "✓ %s: %s\n", agent, path)
+			if diff == "" {
+				fmt.Fprintf(out, "  (already configured — no changes)\n")
+			}
 		}
 	}
 

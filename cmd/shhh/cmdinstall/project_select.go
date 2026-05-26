@@ -50,7 +50,15 @@ func ListClaudeProjects() ([]ClaudeProject, error) {
 			continue
 		}
 		dash := e.Name()
-		abs := auditpkg.DecodeDashPath(dash)
+		// ResolveProjectPath prefers the loss-less `cwd` field stored
+		// in transcript JSONLs and only falls back to the naive
+		// dash-decode when no transcript is readable. Critical for
+		// project paths that contain literal hyphens (e.g.
+		// `~/open-source/shhh`), which the dash-decode would corrupt
+		// into `~/open/source/shhh`. The installer needs the true path
+		// because that becomes the install target.
+		projectDir := filepath.Join(dir, dash)
+		abs := auditpkg.ResolveProjectPath(dash, projectDir)
 		out = append(out, ClaudeProject{
 			DashName:    dash,
 			AbsPath:     abs,

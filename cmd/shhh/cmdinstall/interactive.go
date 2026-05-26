@@ -3,6 +3,8 @@ package cmdinstall
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/x/term"
@@ -40,7 +42,7 @@ func RunInteractive() error {
 	fmt.Println()
 
 	plan := &Plan{
-		Scope:   ScopeGlobal, // v0.2: always global from the interactive flow
+		Scope:   ScopeGlobal,
 		Agents:  nil,
 		Cwd:     cwd,
 		RunScan: false,
@@ -64,6 +66,17 @@ func RunInteractive() error {
 	)
 	if err := agentForm.Run(); err != nil {
 		return fmt.Errorf("installer cancelled: %w", err)
+	}
+
+	// --- Group 1b: install scope -------------------------------------
+	// Global is the default and matches what most users want. Project
+	// scope is for users who want shhh active only in selected repos —
+	// typically because they intend to commit .claude/settings.json so
+	// teammates inherit shhh automatically. We source the candidate
+	// project list from ~/.claude/projects/ (where the user has
+	// actually run Claude Code) rather than asking them to type a path.
+	if err := chooseScope(plan); err != nil {
+		return err
 	}
 
 	// --- Group 2..N: per-agent configuration -------------------------
@@ -194,6 +207,195 @@ func agentOptions(detected []string) []huh.Option[string] {
 		opts = append(opts, huh.NewOption("Claude Code  (detected at ~/.claude)", "claude-code").Selected(true))
 	}
 	return opts
+}
+
+// chooseScope asks the user whether to install globally or only in a
+// selected set of projects. For the project case it presents the
+// multiselect of known Claude-Code project directories (from
+// ~/.claude/projects/) so the user picks from a concrete list rather
+// than typing paths. Mutates plan.Scope and plan.ProjectPaths.
+func chooseScope(plan *Plan) error {
+	const (
+		choiceGlobal  = "global"
+		choiceProject = "project"
+	)
+	scopeChoice := choiceGlobal
+	scopeForm := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Where to install shhh?").
+				Description("Global protects every Claude Code session on this machine.\n" +
+					"Per-project writes <project>/.claude/settings.json — commit it\n" +
+					"to a repo so teammates inherit shhh automatically.").
+				Options(
+					huh.NewOption("Global  (every Claude Code session on this machine)", choiceGlobal),
+					huh.NewOption("This project only  (pick from your Claude history)", choiceProject),
+				).
+				Value(&scopeChoice),
+		),
+	)
+	if err := scopeForm.Run(); err != nil {
+		return fmt.Errorf("installer cancelled: %w", err)
+	}
+	if scopeChoice == choiceGlobal {
+		plan.Scope = ScopeGlobal
+		return nil
+	}
+
+	// Project scope: source candidates from the user's Claude history.
+	// Only OnDisk projects are eligible — installing into a directory
+	// that doesn't exist anymore would create a stray .claude/.
+	projects, err := ListClaudeProjects()
+	if err != nil {
+		return fmt.Errorf("list claude projects: %w", err)
+	}
+	var eligible []ClaudeProject
+	for _, p := range projects {
+		if p.OnDisk {
+			eligible = append(eligible, p)
+		}
+	}
+
+	// The "custom path" sentinel sits at the top of the list so users
+	// can install in a repo Claude has never been opened in (fresh
+	// clone, brand-new project). Picking it triggers a follow-up Input
+	// prompt that accepts one path per loop until empty.
+	const customSentinel = "__custom_path__"
+	opts := []huh.Option[string]{
+		huh.NewOption("✍ Type a custom path... (for repos not in your Claude history)", customSentinel),
+	}
+	for _, p := range eligible {
+		opts = append(opts, huh.NewOption(p.DisplayPath, p.AbsPath))
+	}
+
+	var selected []string
+	description := fmt.Sprintf(
+		"Found %d project director%s in your Claude history. shhh will\n"+
+			"write <project>/.claude/settings.json in each one you pick.",
+		len(eligible), pluralY(len(eligible)))
+	if len(eligible) == 0 {
+		description = "No project directories found in your Claude history.\n" +
+			"Use the 'Type a custom path...' option to install in an arbitrary repo."
+	}
+	projForm := huh.NewForm(
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Which projects to install shhh into?").
+				Description(description).
+				Options(opts...).
+				Value(&selected).
+				Filterable(true).
+				Validate(func(sel []string) error {
+					if len(sel) == 0 {
+						return fmt.Errorf("pick at least one project (or restart and choose Global)")
+					}
+					return nil
+				}),
+		),
+	)
+	if err := projForm.Run(); err != nil {
+		return fmt.Errorf("installer cancelled: %w", err)
+	}
+
+	// Separate custom-path sentinel from real selections.
+	var chosen []string
+	wantsCustom := false
+	for _, s := range selected {
+		if s == customSentinel {
+			wantsCustom = true
+			continue
+		}
+		chosen = append(chosen, s)
+	}
+
+	if wantsCustom {
+		customPaths, err := promptCustomPaths()
+		if err != nil {
+			return err
+		}
+		chosen = append(chosen, customPaths...)
+	}
+
+	if len(chosen) == 0 {
+		return fmt.Errorf("no project paths selected")
+	}
+	plan.Scope = ScopeProject
+	plan.ProjectPaths = chosen
+	return nil
+}
+
+// promptCustomPaths repeatedly asks the user for a project path until
+// they submit an empty line. Each entered path is resolved to its
+// absolute form and validated as an existing directory; rejected
+// inputs re-prompt rather than aborting the whole installer.
+func promptCustomPaths() ([]string, error) {
+	var paths []string
+	for {
+		var raw string
+		input := huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Path to project").
+					Description("Absolute or relative path. Leave empty and press enter to finish.").
+					Value(&raw).
+					Validate(func(s string) error {
+						s = strings.TrimSpace(s)
+						if s == "" {
+							return nil // empty = done
+						}
+						abs, err := filepath.Abs(expandTilde(s))
+						if err != nil {
+							return fmt.Errorf("invalid path: %w", err)
+						}
+						info, err := os.Stat(abs)
+						if err != nil {
+							return fmt.Errorf("%s: %w", abs, err)
+						}
+						if !info.IsDir() {
+							return fmt.Errorf("%s is not a directory", abs)
+						}
+						return nil
+					}),
+			),
+		)
+		if err := input.Run(); err != nil {
+			return nil, fmt.Errorf("installer cancelled: %w", err)
+		}
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return paths, nil
+		}
+		abs, _ := filepath.Abs(expandTilde(raw))
+		paths = append(paths, abs)
+		fmt.Printf("  ✓ %s\n", abs)
+	}
+}
+
+// expandTilde replaces a leading ~ with the user's home directory.
+// Paths typed by hand commonly use ~ ; filepath.Abs does not expand it
+// since the shell normally does that before exec.
+func expandTilde(p string) string {
+	if !strings.HasPrefix(p, "~") {
+		return p
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return p
+	}
+	if p == "~" {
+		return home
+	}
+	if strings.HasPrefix(p, "~/") {
+		return filepath.Join(home, p[2:])
+	}
+	return p
+}
+
+func pluralY(n int) string {
+	if n == 1 {
+		return "y"
+	}
+	return "ies"
 }
 
 // isInteractive reports whether stdin is a real terminal. huh opens

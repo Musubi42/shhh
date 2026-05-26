@@ -18,13 +18,32 @@ import (
 // Redactor is the stateful pair of (detector, session map) used for one agent
 // session. Multiple Redact calls with the same Redactor produce consistent
 // placeholders for the same values.
+//
+// `det` is `detector.Backend` (interface) so a caller can swap in the
+// gitleaks backend via `SHHH_DETECTOR=gitleaks`. The env-pass in
+// `RedactEnvFile` additionally type-asserts for an `envValueChecker`
+// (only the shhh-native `*detector.Detector` provides it today) —
+// when the asserted interface is absent (e.g., gitleaks backend),
+// the env-pass falls back to running `Backend.Detect` on the raw
+// value, losing the "looser env-context threshold" calibration.
+// See gitleaks-spike.md Risks for the calibration follow-up.
 type Redactor struct {
-	det  *detector.Detector
+	det  detector.Backend
 	sess *session.Map
 }
 
-// New wires a detector and a session map together.
-func New(det *detector.Detector, sess *session.Map) *Redactor {
+// envValueChecker is an optional capability some backends expose
+// for the env-aware second pass. Defined locally so we don't have
+// to pollute `detector.Backend` with a feature only one impl has.
+type envValueChecker interface {
+	CheckEnvValue(string) bool
+}
+
+// New wires a detector backend and a session map together. Accepts
+// any `detector.Backend` — pass `detector.New()` for the shhh-native
+// backend, `detector.NewGitleaks()` for gitleaks, or
+// `detector.NewFromEnv()` to let `$SHHH_DETECTOR` decide.
+func New(det detector.Backend, sess *session.Map) *Redactor {
 	return &Redactor{det: det, sess: sess}
 }
 
@@ -50,6 +69,22 @@ func (r *Redactor) RedactEnvFile(content []byte) ([]byte, []detector.Finding) {
 	envFindings := r.envValueFindings(content, findings)
 	all := append(findings, envFindings...)
 	return r.spliceFindings(content, all), all
+}
+
+// checkEnvValue gates whether a KEY=VALUE pair should be redacted
+// by the env-aware second pass. Backends that expose
+// `CheckEnvValue` (today only the shhh-native `*detector.Detector`)
+// drive the decision; backends that don't fall back to "rely on
+// the main Detect pass" — if the value didn't already light up the
+// main detector, it doesn't qualify here either.
+func (r *Redactor) checkEnvValue(value string) bool {
+	if ec, ok := r.det.(envValueChecker); ok {
+		return ec.CheckEnvValue(value)
+	}
+	// Fallback: only redact env values the main detector already
+	// considers significant — avoids false positives when the
+	// shhh-native threshold isn't available.
+	return len(r.det.Detect([]byte(value))) > 0
 }
 
 // envLineRe captures KEY and VALUE from a dotenv-style line. Anchored to
@@ -96,7 +131,7 @@ func (r *Redactor) envValueFindings(content []byte, existing []detector.Finding)
 		if skip {
 			continue
 		}
-		if !r.det.CheckEnvValue(value) {
+		if !r.checkEnvValue(value) {
 			continue
 		}
 		out = append(out, detector.Finding{

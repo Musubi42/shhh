@@ -73,15 +73,17 @@ func TestRenderCLIBasic(t *testing.T) {
 	}
 	out := buf.String()
 
+	// CLI v0.2 is slim: header + summary + (delta) + action footer.
+	// Per-project findings (placeholders, paths, badges) live in the
+	// HTML report only. Test the summary + action surface, not the
+	// per-project detail.
 	wants := []string{
 		"shhh audit",
 		"Claude Code",
-		"[STRIPE_LIVE_KEY:sk_live_...:a1b2]",
-		"[POSTGRES_CONNSTRING:admin@prod-db.internal:5432/myapp:e5f6]",
-		"~/work/backend",
-		"~/work/safe",
-		"UNPROTECTED",
-		"PROTECTED",
+		"projects",       // summary line
+		"already leaked", // footer callout
+		"NOT hooked",     // install CTA
+		"shhh install claude-code",
 	}
 	for _, w := range wants {
 		if !strings.Contains(out, w) {
