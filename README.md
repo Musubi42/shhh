@@ -66,8 +66,28 @@ shhh install                 # interactive picker (recommended on first run)
 shhh uninstall claude-code   # clean removal of the hook entry
 ```
 
-Codex and Cursor support are on the roadmap
-([`docs/implementation-roadmap.md`](docs/implementation-roadmap.md)).
+`shhh install` picks the detection engines for you (default:
+`gitleaks`, shipping ~222 MIT-licensed rules) or lets you compose:
+
+```sh
+shhh install claude-code --engines gitleaks,shhh-native
+```
+
+- **gitleaks** is the default. Maintained third-party rules, MIT,
+  curated path allowlist (lockfiles, vendor, binaries skipped).
+- **shhh-native** is the first-party engine. Adds env
+  cross-reference ("value defined in `.env` found copy-pasted in
+  code") and structural URL handling
+  (`postgres://user:pwd@host/db` → host/db stay visible, creds
+  redacted). Use it alongside gitleaks for max coverage.
+
+Pick one or both. See [`docs/engine-architecture.md`](docs/engine-architecture.md)
+for the full design.
+
+Codex and Cursor support are scoped in
+[`docs/ready-to-publish/04-codex-support.md`](docs/ready-to-publish/04-codex-support.md)
+and
+[`docs/ready-to-publish/05-cursor-support.md`](docs/ready-to-publish/05-cursor-support.md).
 
 ---
 
@@ -98,8 +118,12 @@ Installed via `go install`? Also `rm $(go env GOPATH)/bin/shhh`.
 ## See what shhh is doing
 
 ```sh
-shhh scan .                  # list every secret-shaped value in this directory
-shhh audit                   # forensic audit of what Claude has seen so far
+shhh scan .              # list every secret-shaped value in this directory
+shhh audit               # forensic audit of what Claude has seen so far
+shhh bench .             # compare detection engines on this content
+shhh ignore list         # show the active .shhhignore cascade + gitleaks defaults
+shhh ignore check <path> # explain which layer decides a given path
+shhh licenses            # print shhh + third-party MIT notices
 ```
 
 The hook also prints a one-line trailer after each tool call it
@@ -124,6 +148,9 @@ external service. It's a single Go binary the agent shells out to
 on each tool call.
 
 For the full design rationale see [`PRD.md`](PRD.md) §§1, 2, 5, 6, 8.
+The current engine architecture (gitleaks + shhh-native + layered
+`.shhhignore`) is documented in
+[`docs/engine-architecture.md`](docs/engine-architecture.md).
 
 ---
 

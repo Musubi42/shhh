@@ -1,5 +1,14 @@
 # ROADMAP
 
+> **Launching the project?** The mass-adoption path is broken out
+> into six session-ready briefs in
+> [`docs/ready-to-publish/`](docs/ready-to-publish/) — Read→Edit
+> ledger handling, releases + Homebrew, viral README rewrite,
+> Codex + Cursor support, and the launch post. Each is meant to
+> be handled in one focused session. The items below are the
+> ongoing-quality roadmap; ready-to-publish is the
+> launch-readiness roadmap.
+
 Working list of the next things to fix on shhh, ordered by how much
 each one moves the forcing-function scenario in `CLAUDE.md` forward.
 Derived from the 2026-04-15 dogfooding session where shhh intercepted
