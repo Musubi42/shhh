@@ -77,7 +77,7 @@ func (p *Plan) Validate() error {
 	}
 	for _, a := range p.Agents {
 		switch a {
-		case "claude-code":
+		case "claude-code", "codex":
 		default:
 			return fmt.Errorf("plan: agent %q is not supported yet", a)
 		}
@@ -148,7 +148,7 @@ func (p *Plan) Execute(binary string, out io.Writer) error {
 			if err != nil {
 				return fmt.Errorf("resolve %s settings path: %w", agent, err)
 			}
-			diff, err := Install(path, binary)
+			diff, err := Install(path, binary, agent)
 			if err != nil {
 				return fmt.Errorf("install %s: %w", agent, err)
 			}

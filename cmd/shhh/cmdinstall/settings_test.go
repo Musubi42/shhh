@@ -24,7 +24,7 @@ func readJSON(t *testing.T, path string) map[string]any {
 func TestInstallIntoMissingFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "settings.json")
-	d, err := Install(path, "/opt/shhh/bin/shhh")
+	d, err := Install(path, "/opt/shhh/bin/shhh", "claude-code")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,14 +48,14 @@ func TestInstallIntoMissingFile(t *testing.T) {
 
 func TestInstallIsIdempotent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.json")
-	if _, err := Install(path, "/opt/shhh/bin/shhh"); err != nil {
+	if _, err := Install(path, "/opt/shhh/bin/shhh", "claude-code"); err != nil {
 		t.Fatal(err)
 	}
 	before, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	d, err := Install(path, "/opt/shhh/bin/shhh")
+	d, err := Install(path, "/opt/shhh/bin/shhh", "claude-code")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestInstallPreservesExistingConfig(t *testing.T) {
 	out, _ := json.MarshalIndent(original, "", "  ")
 	os.WriteFile(path, out, 0o600)
 
-	if _, err := Install(path, "/opt/shhh/bin/shhh"); err != nil {
+	if _, err := Install(path, "/opt/shhh/bin/shhh", "claude-code"); err != nil {
 		t.Fatal(err)
 	}
 	m := readJSON(t, path)
@@ -139,10 +139,10 @@ func TestUninstallRemovesOnlyShhhEntries(t *testing.T) {
 	out, _ := json.MarshalIndent(original, "", "  ")
 	os.WriteFile(path, out, 0o600)
 
-	if _, err := Install(path, "/opt/shhh/bin/shhh"); err != nil {
+	if _, err := Install(path, "/opt/shhh/bin/shhh", "claude-code"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Uninstall(path); err != nil {
+	if _, err := Uninstall(path, "claude-code"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -178,10 +178,10 @@ func TestUninstallRoundTripRestoresFile(t *testing.T) {
 `)
 	os.WriteFile(path, orig, 0o600)
 
-	if _, err := Install(path, "/opt/shhh/bin/shhh"); err != nil {
+	if _, err := Install(path, "/opt/shhh/bin/shhh", "claude-code"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Uninstall(path); err != nil {
+	if _, err := Uninstall(path, "claude-code"); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(path)
@@ -197,7 +197,7 @@ func TestUninstallRoundTripRestoresFile(t *testing.T) {
 
 func TestInstallQuotesPathWithSpace(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.json")
-	if _, err := Install(path, "/Users/Alice Name/bin/shhh"); err != nil {
+	if _, err := Install(path, "/Users/Alice Name/bin/shhh", "claude-code"); err != nil {
 		t.Fatal(err)
 	}
 	buf, _ := os.ReadFile(path)

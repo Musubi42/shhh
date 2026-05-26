@@ -85,6 +85,60 @@ that change the hook API are tracked in the GitHub tracking issue
 (see `docs/ready-to-publish/01-tracking-issue-draft.md` for the
 body until the issue is opened).
 
+## 2. Codex: only `Bash` is intercepted today
+
+### What you see
+
+When you run `shhh install codex`, the post-install footer prints:
+
+```
+Codex coverage note: shhh intercepts Bash today (cat .env, rg, etc.). Codex's
+apply_patch and read_file tools do not yet fire PreToolUse upstream — track
+https://github.com/openai/codex/issues/18491.
+```
+
+That is the limit: shhh sees Codex shell commands (`cat .env`,
+`rg`, `head`, `sed -i`), but it does **not** see `apply_patch`
+edits or the internal `read_file` / `grep` tools.
+
+### Why this happens
+
+Codex CLI v0.117 ships a `PreToolUse` hook system structurally
+identical to Claude Code's (same JSON payload, same response
+shape — see
+[`docs/codex-research-2026-05-26.md`](codex-research-2026-05-26.md)).
+But as of 2026-05, `PreToolUse` fires reliably only when
+`tool_name == "Bash"`. `apply_patch`, `read_file`, and `grep` are
+tracked upstream in
+[openai/codex#18491](https://github.com/openai/codex/issues/18491)
+but not yet shipped.
+
+### Practical impact
+
+- ✓ "Codex, please read my `.env`" — Codex will run `cat .env`,
+  the Bash hook fires, shhh redacts. **Covered.**
+- ✓ "Codex, please grep for `STRIPE_LIVE_KEY` across the repo" —
+  same path (Codex uses `rg`). **Covered.**
+- ✗ "Codex, please edit `config.yml` line 12" — Codex calls
+  `apply_patch` directly, which does not fire `PreToolUse`. The
+  pre-edit content (which Codex must read into memory to compute
+  the patch) reaches the model unredacted. **Not covered.**
+
+### When this lifts
+
+Automatically, when Anthropic-style multi-tool hook coverage
+lands upstream — `cmd/shhh/cmdhook/codex.go`'s dispatcher will
+just need an `apply_patch` / `read_file` handler added to the
+switch. Track the upstream issue.
+
+### Workaround until upstream ships
+
+Prefer prompting Codex to use shell tools for file inspection
+("read X with `cat`", "patch Y with `sed -i`"). Codex's
+shell-via-Bash mode catches everything shhh needs to see.
+
+---
+
 ## Reporting limitations not listed here
 
 Open an issue against

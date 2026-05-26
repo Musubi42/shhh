@@ -264,6 +264,9 @@ func agentOptions(detected []string) []huh.Option[string] {
 	if want["claude-code"] {
 		opts = append(opts, huh.NewOption("Claude Code  (detected at ~/.claude)", "claude-code").Selected(true))
 	}
+	if want["codex"] {
+		opts = append(opts, huh.NewOption("Codex  (detected at ~/.codex — Bash-only coverage, see docs)", "codex").Selected(true))
+	}
 	return opts
 }
 

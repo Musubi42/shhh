@@ -7,8 +7,8 @@ import (
 	"os"
 )
 
-// Run is the entry point for `shhh hook <target>`. The only target wired up
-// in v0.1 is "claude-code".
+// Run is the entry point for `shhh hook <target>`. Supported targets:
+// "claude-code" and "codex".
 //
 // Redaction is best-effort-non-blocking: any failure path falls through to
 // an empty JSON response and exit 0, so the tool call proceeds unmodified
@@ -22,8 +22,10 @@ func Run(args []string) error {
 	switch target {
 	case "claude-code":
 		return runClaudeCode(os.Stdin, os.Stdout)
+	case "codex":
+		return runCodex(os.Stdin, os.Stdout)
 	default:
-		return fmt.Errorf("hook: unknown target %q (supported: claude-code)", target)
+		return fmt.Errorf("hook: unknown target %q (supported: claude-code, codex)", target)
 	}
 }
 

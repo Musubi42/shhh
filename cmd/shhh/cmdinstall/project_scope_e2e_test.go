@@ -25,8 +25,8 @@ import (
 func TestProjectScopeInstallAuditUninstallCycle(t *testing.T) {
 	_, shhhDir, projectRoot := hermeticEnv(t)
 
-	if err := installClaudeCode(ScopeProject, []string{projectRoot}, nil); err != nil {
-		t.Fatalf("installClaudeCode: %v", err)
+	if err := installAgent("claude-code", ScopeProject, []string{projectRoot}, nil); err != nil {
+		t.Fatalf("installAgent: %v", err)
 	}
 
 	settingsPath := filepath.Join(projectRoot, ".claude", "settings.json")
@@ -71,8 +71,8 @@ func TestProjectScopeInstallAuditUninstallCycle(t *testing.T) {
 	}
 
 	// Uninstall.
-	if err := uninstallClaudeCode(ScopeProject, []string{projectRoot}); err != nil {
-		t.Fatalf("uninstallClaudeCode: %v", err)
+	if err := uninstallAgent("claude-code", ScopeProject, []string{projectRoot}); err != nil {
+		t.Fatalf("uninstallAgent: %v", err)
 	}
 	cfg2, _ := LoadConfig()
 	if cfg2 == nil {

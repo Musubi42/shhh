@@ -52,7 +52,7 @@ func TestPlanValidate(t *testing.T) {
 		},
 		{
 			name:    "unsupported agent",
-			plan:    Plan{Scope: ScopeGlobal, Agents: []string{"codex"}},
+			plan:    Plan{Scope: ScopeGlobal, Agents: []string{"cursor"}},
 			wantErr: "not supported",
 		},
 		{
@@ -302,7 +302,7 @@ func TestAgentSettingsPathProject(t *testing.T) {
 
 func TestAgentSettingsPathUnknownAgent(t *testing.T) {
 	hermeticEnv(t)
-	if _, err := AgentSettingsPath("codex", ScopeGlobal, ""); err == nil {
+	if _, err := AgentSettingsPath("cursor", ScopeGlobal, ""); err == nil {
 		t.Error("unknown agent should error")
 	}
 }

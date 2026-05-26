@@ -101,9 +101,22 @@ shhh ships with two detection engines:
 shhh install claude-code --engines gitleaks,shhh-native
 ```
 
-Codex and Cursor support are scoped in
-[`docs/ready-to-publish/04-codex-support.md`](docs/ready-to-publish/04-codex-support.md)
-and
+**Codex CLI** support also ships:
+
+```sh
+shhh install codex     # writes ~/.codex/hooks.json
+```
+
+Coverage today is **Bash only** — `cat .env`, `rg`, `sed -i`, and
+any shell command Codex runs are redacted. Codex's internal
+`apply_patch` / `read_file` tools do not yet fire `PreToolUse`
+upstream (track
+[openai/codex#18491](https://github.com/openai/codex/issues/18491)).
+Until that lands, in-place edits via `apply_patch` can hand the
+model a raw secret. Full repro:
+[`docs/known-limitations.md`](docs/known-limitations.md) §2.
+
+**Cursor** support is scoped in
 [`docs/ready-to-publish/05-cursor-support.md`](docs/ready-to-publish/05-cursor-support.md).
 
 ---

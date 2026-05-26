@@ -1,5 +1,10 @@
-// Package cmdinstall implements `shhh install claude-code` and its
-// uninstall counterpart. It edits ~/.claude/settings.json idempotently.
+// Package cmdinstall implements `shhh install <agent>` and its
+// uninstall counterpart. It edits each agent's settings file (e.g.
+// ~/.claude/settings.json for Claude Code, ~/.codex/hooks.json for
+// Codex) idempotently. The two agents share the same JSON hook
+// envelope shape, so the install/uninstall logic is identical
+// modulo the file path and the set of (event, matcher) pairs we
+// manage per agent.
 package cmdinstall
 
 import (
@@ -10,42 +15,60 @@ import (
 	"strings"
 )
 
-// hookSuffix is the trailing substring that marks a hook entry as one of
-// ours. We match on command-string suffix rather than a sentinel key on the
-// JSON object because Claude Code may reject unknown keys, and the absolute
-// path to the shhh binary varies per install.
-const hookSuffix = " hook claude-code"
+// hookSuffixFor returns the trailing substring that marks a hook entry
+// as one of ours for the given agent. We match on command-string
+// suffix rather than a sentinel JSON key because some agents reject
+// unknown keys, and the absolute path to the shhh binary varies per
+// install.
+func hookSuffixFor(agent string) string {
+	return " hook " + agent
+}
 
 // managedHooks is the set of (event, matcher) pairs we install into
-// settings.json. matcher == "" means no matcher field (used for SessionEnd,
-// which does not match on tool name).
+// the agent's settings file. matcher == "" means no matcher field
+// (used for SessionEnd, which does not match on tool name).
 type managedHook struct {
 	event   string
 	matcher string
 }
 
-func managed() []managedHook {
-	return []managedHook{
-		{"PreToolUse", "Read"},
-		{"PreToolUse", "Bash"},
-		{"SessionEnd", ""},
+// managedFor returns the (event, matcher) pairs we install for a
+// given agent. Codex omits the Read matcher because Codex has no
+// first-class Read tool: file reads happen via `cat`/`rg`/`sed`
+// inside Bash. See cmd/shhh/cmdhook/codex.go for the dispatcher.
+func managedFor(agent string) []managedHook {
+	switch agent {
+	case "codex":
+		return []managedHook{
+			{"PreToolUse", "Bash"},
+			{"SessionEnd", ""},
+		}
+	default: // claude-code
+		return []managedHook{
+			{"PreToolUse", "Read"},
+			{"PreToolUse", "Bash"},
+			{"SessionEnd", ""},
+		}
 	}
 }
 
-// Install merges shhh's hook entries into the settings.json at path.
-// binary is the absolute path to the shhh executable that will run on each
-// firing. Returns a unified-ish diff string describing the change (empty
-// string if no change).
-func Install(path, binary string) (string, error) {
+// Install merges shhh's hook entries into the settings file at path
+// for the given agent. binary is the absolute path to the shhh
+// executable that will run on each firing. agent ("claude-code" or
+// "codex") drives both the command suffix (`shhh hook <agent>`) and
+// the set of (event, matcher) pairs to install. Returns a
+// unified-ish diff string describing the change (empty when no
+// change).
+func Install(path, binary, agent string) (string, error) {
 	raw, settings, err := loadOrInit(path)
 	if err != nil {
 		return "", err
 	}
 	before := string(raw)
 
-	cmd := quoteIfNeeded(binary) + hookSuffix
+	cmd := quoteIfNeeded(binary) + hookSuffixFor(agent)
 	var added []managedHook
-	for _, mh := range managed() {
+	for _, mh := range managedFor(agent) {
 		if ensureHook(settings, mh, cmd) {
 			added = append(added, mh)
 		}
@@ -70,14 +93,18 @@ func Install(path, binary string) (string, error) {
 	}), nil
 }
 
-// Uninstall removes all shhh hook entries from the settings.json at path.
-// Surrounding configuration is left alone.
-func Uninstall(path string) (string, error) {
+// Uninstall removes shhh hook entries for the given agent from the
+// settings file at path. Surrounding configuration (including hook
+// entries for other agents, should they coexist in the same file) is
+// left alone. The agent argument drives suffix matching: we only
+// remove entries whose command ends in ` hook <agent>`.
+func Uninstall(path, agent string) (string, error) {
 	raw, settings, err := loadOrInit(path)
 	if err != nil {
 		return "", err
 	}
 	before := string(raw)
+	hookSuffix := hookSuffixFor(agent)
 
 	hooks, _ := settings["hooks"].(map[string]any)
 	if hooks == nil {

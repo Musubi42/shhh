@@ -35,14 +35,14 @@ func RunInstall(args []string) error {
 	target := args[0]
 	rest := args[1:]
 	switch target {
-	case "claude-code":
+	case "claude-code", "codex":
 		scope, paths, engines, err := parseInstallFlags("install", rest)
 		if err != nil {
 			return err
 		}
-		return installClaudeCode(scope, paths, engines)
+		return installAgent(target, scope, paths, engines)
 	default:
-		return fmt.Errorf("install: unknown target %q (supported: claude-code, or omit for interactive)", target)
+		return fmt.Errorf("install: unknown target %q (supported: claude-code, codex, or omit for interactive)", target)
 	}
 }
 
@@ -55,14 +55,14 @@ func RunUninstall(args []string) error {
 	target := args[0]
 	rest := args[1:]
 	switch target {
-	case "claude-code":
+	case "claude-code", "codex":
 		scope, paths, _, err := parseInstallFlags("uninstall", rest)
 		if err != nil {
 			return err
 		}
-		return uninstallClaudeCode(scope, paths)
+		return uninstallAgent(target, scope, paths)
 	default:
-		return fmt.Errorf("uninstall: unknown target %q (supported: claude-code)", target)
+		return fmt.Errorf("uninstall: unknown target %q (supported: claude-code, codex)", target)
 	}
 }
 
@@ -273,14 +273,17 @@ func validateProjectPath(p string) error {
 	return nil
 }
 
-// installClaudeCode installs the hook for one or more targets. For
-// scope=global, paths is ignored (a single canonical settings path is
-// used). For scope=project, paths is the list of project roots to
-// install into; each one gets <root>/.claude/settings.json.
+// installAgent installs the shhh hook for one or more targets, against
+// the given agent ("claude-code" or "codex"). For scope=global, paths
+// is ignored (a single canonical settings path is used). For
+// scope=project, paths is the list of project roots to install into;
+// each one gets a per-agent config dir (<root>/.claude/settings.json or
+// <root>/.codex/hooks.json).
+//
 // engines is the validated engine selection; nil means "preserve
-// whatever is already in ~/.shhh/config.json (or take the default
-// on first install)".
-func installClaudeCode(scope Scope, paths []string, engines []string) error {
+// whatever is already in ~/.shhh/config.json (or take the default on
+// first install)".
+func installAgent(agent string, scope Scope, paths []string, engines []string) error {
 	binary, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve shhh binary path: %w", err)
@@ -293,16 +296,17 @@ func installClaudeCode(scope Scope, paths []string, engines []string) error {
 	}
 
 	for _, target := range targets {
-		settingsPath, err := AgentSettingsPath("claude-code", scope, target)
+		settingsPath, err := AgentSettingsPath(agent, scope, target)
 		if err != nil {
 			return err
 		}
 
-		// For project scope, the `.claude/` directory often doesn't
-		// exist yet (Claude Code creates it lazily on first session).
-		// Create it so the user can pre-install shhh in a fresh repo.
-		// Mode 0700 matches what Claude Code itself uses.
-		createdClaudeDir := false
+		// For project scope, the agent's config dir often doesn't
+		// exist yet (both Claude Code and Codex create it lazily on
+		// first session). Create it so the user can pre-install shhh
+		// in a fresh repo. Mode 0700 matches what the agents
+		// themselves use.
+		createdConfigDir := false
 		if scope == ScopeProject {
 			// Soft heuristic warning, not a block: if the target
 			// directory looks empty or lacks any project marker
@@ -312,27 +316,27 @@ func installClaudeCode(scope Scope, paths []string, engines []string) error {
 			if note := projectRootHint(target); note != "" {
 				fmt.Fprintf(os.Stderr, "shhh: warning: %s\n", note)
 			}
-			claudeDir := filepath.Dir(settingsPath)
-			if _, statErr := os.Stat(claudeDir); os.IsNotExist(statErr) {
-				if mkErr := os.MkdirAll(claudeDir, 0o700); mkErr != nil {
-					return fmt.Errorf("create %s: %w", claudeDir, mkErr)
+			configDir := filepath.Dir(settingsPath)
+			if _, statErr := os.Stat(configDir); os.IsNotExist(statErr) {
+				if mkErr := os.MkdirAll(configDir, 0o700); mkErr != nil {
+					return fmt.Errorf("create %s: %w", configDir, mkErr)
 				}
-				createdClaudeDir = true
+				createdConfigDir = true
 			}
 		}
 
-		d, err := Install(settingsPath, binary)
+		d, err := Install(settingsPath, binary, agent)
 		if err != nil {
 			return err
 		}
 
-		syncConfigOnInstall(scope, settingsPath, engines)
+		syncConfigOnInstall(agent, scope, settingsPath, engines)
 
 		if d == "" {
 			fmt.Printf("shhh: already installed in %s (no changes)\n", settingsPath)
 			continue
 		}
-		if createdClaudeDir {
+		if createdConfigDir {
 			fmt.Printf("shhh: created %s\n", filepath.Dir(settingsPath))
 		}
 		fmt.Printf("shhh: installed hook into %s\n\n%s", settingsPath, d)
@@ -340,7 +344,7 @@ func installClaudeCode(scope Scope, paths []string, engines []string) error {
 			fmt.Printf("\nThis is a per-project install. Commit %s to your repo so teammates inherit shhh automatically.\n\n", settingsPath)
 		}
 	}
-	printInstallSummary(engines)
+	printInstallSummary(agent, engines)
 	return nil
 }
 
@@ -349,7 +353,12 @@ func installClaudeCode(scope Scope, paths []string, engines []string) error {
 // subcommands. The gitleaks block names the upstream MIT license and
 // links to the pinned `gitleaks.toml` so users can audit the
 // inherited path allowlist without leaving their terminal.
-func printInstallSummary(planEngines []string) {
+//
+// agent affects two strings: the restart hint at the bottom ("Restart
+// any running `claude` sessions" vs "`codex` sessions") and, for codex,
+// an explicit one-paragraph caveat about the upstream
+// apply_patch/read_file hook gap.
+func printInstallSummary(agent string, planEngines []string) {
 	// Engines actually persisted may differ from planEngines (nil
 	// means "preserve existing"); reload to print the truth.
 	cfg, _ := LoadConfig()
@@ -376,7 +385,18 @@ func printInstallSummary(planEngines []string) {
 	fmt.Println("  • Inspect active ignore rules:  shhh ignore list")
 	fmt.Println("  • Third-party notices:          shhh licenses")
 	fmt.Println()
-	fmt.Println("Restart any running `claude` sessions for the hook to take effect.")
+
+	switch agent {
+	case "codex":
+		fmt.Println("Codex coverage note: shhh intercepts Bash today (cat .env, rg, etc.). Codex's")
+		fmt.Println("apply_patch and read_file tools do not yet fire PreToolUse upstream — track")
+		fmt.Println("https://github.com/openai/codex/issues/18491. Until that ships, in-place edits")
+		fmt.Println("via apply_patch can hand the model a raw secret. See docs/known-limitations.md.")
+		fmt.Println()
+		fmt.Println("Restart any running `codex` sessions for the hook to take effect.")
+	default:
+		fmt.Println("Restart any running `claude` sessions for the hook to take effect.")
+	}
 }
 
 // gitleaksVersion returns the gitleaks module version embedded in
@@ -396,19 +416,19 @@ func gitleaksVersion() string {
 	return "v8"
 }
 
-// uninstallClaudeCode is the symmetric multi-target uninstall.
-func uninstallClaudeCode(scope Scope, paths []string) error {
+// uninstallAgent is the symmetric multi-target uninstall.
+func uninstallAgent(agent string, scope Scope, paths []string) error {
 	targets := []string{""}
 	if scope == ScopeProject {
 		targets = paths
 	}
 
 	for _, target := range targets {
-		settingsPath, err := AgentSettingsPath("claude-code", scope, target)
+		settingsPath, err := AgentSettingsPath(agent, scope, target)
 		if err != nil {
 			return err
 		}
-		d, err := Uninstall(settingsPath)
+		d, err := Uninstall(settingsPath, agent)
 		if err != nil {
 			return err
 		}
@@ -438,11 +458,12 @@ func uninstallClaudeCode(scope Scope, paths []string) error {
 	return nil
 }
 
-// syncConfigOnInstall adds the path to installed_paths and updates
-// scope using the "highest scope wins" rule (global > project).
-// engines is the explicit selection from --engines (or nil to
-// preserve the existing config / fall through to default).
-func syncConfigOnInstall(scope Scope, path string, engines []string) {
+// syncConfigOnInstall adds the path to installed_paths, updates scope
+// (highest scope wins, global > project), and appends agent to Agents
+// if not already present. engines is the explicit selection from
+// --engines (or nil to preserve the existing config / fall through
+// to default).
+func syncConfigOnInstall(agent string, scope Scope, path string, engines []string) {
 	cfg, _ := LoadConfig()
 	if cfg == nil {
 		cfg = &Config{}
@@ -454,18 +475,17 @@ func syncConfigOnInstall(scope Scope, path string, engines []string) {
 		cfg.Scope = string(scope)
 	}
 	if cfg.Agents == nil {
-		cfg.Agents = []string{"claude-code"}
+		cfg.Agents = []string{agent}
 	} else {
-		// Add claude-code if not present
 		found := false
 		for _, a := range cfg.Agents {
-			if a == "claude-code" {
+			if a == agent {
 				found = true
 				break
 			}
 		}
 		if !found {
-			cfg.Agents = append(cfg.Agents, "claude-code")
+			cfg.Agents = append(cfg.Agents, agent)
 		}
 	}
 	if len(engines) > 0 {
@@ -491,17 +511,27 @@ func syncConfigOnUninstall(path string) {
 	}
 }
 
-// inferScopeFromPaths returns "global" if any path matches the global
-// claude settings location, "project" if at least one project-scoped
-// path remains, or "" if the list is empty.
+// inferScopeFromPaths returns "global" if any path matches a known
+// global agent settings location (Claude Code or Codex), "project" if
+// at least one project-scoped path remains, or "" if the list is
+// empty.
 func inferScopeFromPaths(paths []string) string {
 	if len(paths) == 0 {
 		return ""
 	}
-	global, _ := claudeSettingsPath()
+	globals := make([]string, 0, 2)
+	if p, err := claudeSettingsPath(); err == nil && p != "" {
+		globals = append(globals, filepath.Clean(p))
+	}
+	if p, err := codexHooksPath(); err == nil && p != "" {
+		globals = append(globals, filepath.Clean(p))
+	}
 	for _, p := range paths {
-		if global != "" && filepath.Clean(p) == filepath.Clean(global) {
-			return "global"
+		clean := filepath.Clean(p)
+		for _, g := range globals {
+			if clean == g {
+				return "global"
+			}
 		}
 	}
 	return "project"
@@ -531,13 +561,24 @@ const (
 	ScopeProject Scope = "project"
 )
 
-// AgentSettingsPath resolves the settings.json path for a given agent and
-// scope. For project scope, cwd is the directory the user ran `shhh
-// install` from — its `.claude/settings.json` (or equivalent) is the
-// target. For global scope, cwd is ignored.
+// AgentSettingsPath resolves the settings/hooks file path for a given
+// agent and scope. For project scope, cwd is the directory the user ran
+// `shhh install` from — its agent-specific config dir is the target.
+// For global scope, cwd is ignored.
 //
 // Returns an error for unknown agents so the interactive installer can
 // report them cleanly instead of silently defaulting.
+//
+// Per-agent layout:
+//   - claude-code → ~/.claude/settings.json | <cwd>/.claude/settings.json
+//   - codex       → ~/.codex/hooks.json     | <cwd>/.codex/hooks.json
+//
+// Codex's primary config is ~/.codex/config.toml; we use a dedicated
+// ~/.codex/hooks.json instead because (a) shhh's install/uninstall
+// logic is JSON-native, (b) Codex's hook discovery accepts hooks.json
+// out of the box per developers.openai.com/codex/hooks, and (c) it
+// keeps shhh's footprint isolated from the user's TOML config so
+// uninstall is clean.
 func AgentSettingsPath(agent string, scope Scope, cwd string) (string, error) {
 	switch agent {
 	case "claude-code":
@@ -556,9 +597,38 @@ func AgentSettingsPath(agent string, scope Scope, cwd string) (string, error) {
 		default:
 			return "", fmt.Errorf("unknown scope %q", scope)
 		}
+	case "codex":
+		switch scope {
+		case ScopeGlobal:
+			return codexHooksPath()
+		case ScopeProject:
+			if cwd == "" {
+				return "", fmt.Errorf("project scope requires a working directory")
+			}
+			abs, err := filepath.Abs(cwd)
+			if err != nil {
+				return "", fmt.Errorf("resolve cwd: %w", err)
+			}
+			return filepath.Join(abs, ".codex", "hooks.json"), nil
+		default:
+			return "", fmt.Errorf("unknown scope %q", scope)
+		}
 	default:
 		return "", fmt.Errorf("unknown agent %q", agent)
 	}
+}
+
+// codexHooksPath returns the global Codex hooks file. Respects
+// $CODEX_HOME if set (Codex's own env override).
+func codexHooksPath() (string, error) {
+	if dir := os.Getenv("CODEX_HOME"); dir != "" {
+		return filepath.Join(dir, "hooks.json"), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home dir: %w", err)
+	}
+	return filepath.Join(home, ".codex", "hooks.json"), nil
 }
 
 // DetectInstalledAgents inspects well-known config locations and returns
@@ -568,12 +638,12 @@ func AgentSettingsPath(agent string, scope Scope, cwd string) (string, error) {
 // assume the agent is, even if the user has never actually launched it.
 func DetectInstalledAgents() []string {
 	var out []string
+
 	// Claude Code: $CLAUDE_CONFIG_DIR or ~/.claude.
-	if _, err := claudeSettingsPath(); err == nil {
+	{
 		dir := os.Getenv("CLAUDE_CONFIG_DIR")
 		if dir == "" {
-			home, herr := os.UserHomeDir()
-			if herr == nil {
+			if home, herr := os.UserHomeDir(); herr == nil {
 				dir = filepath.Join(home, ".claude")
 			}
 		}
@@ -583,6 +653,22 @@ func DetectInstalledAgents() []string {
 			}
 		}
 	}
-	// Codex, Cursor: not yet supported.
+
+	// Codex: $CODEX_HOME or ~/.codex.
+	{
+		dir := os.Getenv("CODEX_HOME")
+		if dir == "" {
+			if home, herr := os.UserHomeDir(); herr == nil {
+				dir = filepath.Join(home, ".codex")
+			}
+		}
+		if dir != "" {
+			if st, err := os.Stat(dir); err == nil && st.IsDir() {
+				out = append(out, "codex")
+			}
+		}
+	}
+
+	// Cursor: not yet supported.
 	return out
 }
