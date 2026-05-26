@@ -1,0 +1,16 @@
+shhh — secret-redaction tool for AI coding agents
+Copyright (c) 2026 Raphaël — Musubi SASU
+Distributed under the MIT License (see LICENSE).
+
+This binary includes the following third-party software:
+
+  • gitleaks (https://github.com/gitleaks/gitleaks)
+    Copyright (c) 2019 Zachary Rice
+    Distributed under the MIT License.
+    Linked as a Go module dependency; ~222 detection rules + a
+    curated global path allowlist (lockfiles, vendor directories,
+    binaries) ship as part of the gitleaks default config and are
+    used by shhh's detector and .shhhignore evaluator.
+
+Run `shhh licenses` from a built binary to print the full text of
+every embedded third-party notice.

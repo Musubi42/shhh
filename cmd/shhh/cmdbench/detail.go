@@ -220,13 +220,17 @@ func effectiveEngines(r *benchReport) []string {
 }
 
 // enginePriority is the tiebreaker for label selection AND the
-// stable order of the engine pip list. Lower wins.
+// stable order of the engine pip list. Lower wins. The synthetic
+// `union` engine sits between the two real engines so its pips
+// render in a consistent visual position.
 func enginePriority(e string) int {
 	switch e {
 	case engineNative:
 		return 0
 	case engineGitleaks:
 		return 1
+	case engineUnion:
+		return 2
 	}
 	return 99
 }

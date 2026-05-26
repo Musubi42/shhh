@@ -28,6 +28,14 @@ import (
 const (
 	engineNative   = "shhh-native"
 	engineGitleaks = "gitleaks"
+	// engineUnion is the synthetic engine appended when N≥2 real
+	// engines are requested. It runs every requested engine in
+	// parallel via detector.NewFromConfig and exposes the merged
+	// findings as if a single "union" engine had produced them.
+	// Useful for users picking a multi-engine config — they see
+	// what the combined output looks like alongside each engine
+	// in isolation.
+	engineUnion = "union"
 )
 
 // Run is the entry point. Positional args are paths to scan;
@@ -237,6 +245,20 @@ func runBench(targets, engines []string) (*benchReport, error) {
 			r.BytesScanned = er.BytesScanned
 		}
 	}
+
+	// Append the synthetic `union` engine when the user asked for
+	// multiple real engines, so the report shows the combined
+	// result alongside each engine individually. NewFromConfig
+	// returns the parallel multi-engine backend used in production.
+	if len(engines) >= 2 {
+		backend := detector.NewFromConfig(engines)
+		er, scanErr := scanWith(backend, engineUnion, targets)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		r.Engines = append(r.Engines, er)
+	}
+
 	return r, nil
 }
 

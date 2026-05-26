@@ -11,7 +11,9 @@ import (
 	"github.com/Musubi42/shhh/cmd/shhh/cmdbench"
 	"github.com/Musubi42/shhh/cmd/shhh/cmddoctor"
 	"github.com/Musubi42/shhh/cmd/shhh/cmdhook"
+	"github.com/Musubi42/shhh/cmd/shhh/cmdignore"
 	"github.com/Musubi42/shhh/cmd/shhh/cmdinstall"
+	"github.com/Musubi42/shhh/cmd/shhh/cmdlicenses"
 	"github.com/Musubi42/shhh/cmd/shhh/cmdredact"
 	"github.com/Musubi42/shhh/cmd/shhh/cmdscan"
 )
@@ -68,6 +70,10 @@ func main() {
 		err = cmddoctor.Run(os.Args[2:])
 	case "bench":
 		err = cmdbench.Run(os.Args[2:])
+	case "ignore":
+		err = cmdignore.Run(os.Args[2:])
+	case "licenses":
+		err = cmdlicenses.Run(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println("shhh", version)
 		return
@@ -124,6 +130,13 @@ Usage:
     --no-serve                         Write HTML to disk, no server
     --no-html                          Terminal only, no HTML
     --open                             Default + launch browser
+
+  shhh ignore list                    List active .shhhignore rule cascade
+  shhh ignore add <pattern>           Append a rule (default: project)
+    --global                            Append to ~/.shhh/.shhhignore instead
+  shhh ignore check <path>            Show which layer decides a path
+
+  shhh licenses                       Print shhh + third-party MIT notices
 
   shhh version                        Print version
   shhh help                           Show this message

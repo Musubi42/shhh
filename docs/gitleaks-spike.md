@@ -1,5 +1,12 @@
 # Gitleaks integration spike — 2026-05-26
 
+> **Status: superseded.** Concrete engine architecture lives in
+> [`docs/engine-architecture.md`](engine-architecture.md). Phases 1–6
+> of that design have landed (rename → multi-engine → `.shhhignore`
+> → interactive UX → subcommands → bench union). This doc is kept
+> as the historical record of the calibration thinking that
+> produced the new architecture.
+
 1-hour investigation to decide if/how shhh should replace its
 bespoke detector with gitleaks. Triggered by ROADMAP item #2 and
 the user's 2026-04-15 stance ("custom rules are bad; depend on
