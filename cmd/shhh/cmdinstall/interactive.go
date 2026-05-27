@@ -13,7 +13,7 @@ import (
 // RunInteractive is the entry point for `shhh install` with no target.
 // The v0.2 flow is agent-first: pick agents, then configure each one
 // (v0.2 only knows how to configure Claude Code, but the shape scales
-// to N agents). See docs/design/installer-tui.md for the wireframes
+// to N agents). See docs/dev/design/installer-tui.md for the wireframes
 // this mirrors.
 //
 // Non-TTY environments (CI, piped stdin) return a clear error rather
@@ -72,7 +72,7 @@ func RunInteractive() error {
 	// gitleaks is the default (maintained third-party rules, MIT) +
 	// shhh-native adds env cross-reference and structural URL handling.
 	// At least one engine is required; the validator blocks submission
-	// otherwise. See docs/engine-architecture.md §2.4.
+	// otherwise. See docs/dev/engine-architecture.md §2.4.
 	if err := chooseEngines(plan); err != nil {
 		return err
 	}
@@ -127,7 +127,7 @@ func RunInteractive() error {
 
 	// Footer: advertise the roadmap for agents we don't yet support.
 	fmt.Println()
-	fmt.Println("Coming soon: Codex, Cursor. Track progress in docs/mvp/.")
+	fmt.Println("Coming soon: Codex, Cursor. Track progress in docs/dev/mvp/.")
 	fmt.Println()
 
 	if err := plan.Validate(); err != nil {

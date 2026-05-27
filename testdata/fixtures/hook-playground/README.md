@@ -81,8 +81,8 @@ Read(/Users/musubi42/Documents/Musubi42/shhh/testdata/fixtures/hook-playground/.
 **Status (2026-05-26): documented limit, not a fix target.**
 This fixture remains the canonical repro for the Read→Edit
 ledger limit. Option D shipped instead of a code fix — see
-`docs/known-limitations.md` and the design doc
-`docs/design/read-edit-tracking.md` for why the three viable
+`docs/dev/known-limitations.md` and the design doc
+`docs/dev/design/read-edit-tracking.md` for why the three viable
 hook-API strategies are impossible. The `narrateRedactions`
 output now tells Claude to use `Bash` (sed -i, tee, printf >>,
 python -c) directly on any redacted file, so a *fresh* run of

@@ -11,8 +11,8 @@
 
 > **Reader: §§1–9 describe the product and are current.** §10
 > (Development Phases) is **superseded** — see the banner at the
-> start of that section, `docs/implementation-roadmap.md` for the
-> post-pivot milestone list, and `docs/postmortem-eval-overbuild.md`
+> start of that section, `docs/dev/implementation-roadmap.md` for the
+> post-pivot milestone list, and `docs/dev/postmortem-eval-overbuild.md`
 > for why the prior roadmap was scrapped. `CLAUDE.md` at the repo
 > root has the operating instructions every session should load
 > before touching code.
@@ -1147,8 +1147,8 @@ The `<details open>` tag determines which tool is "featured" by default. This sh
 > step 16 (Docker Claude Code runner) exposed a scoping error: the
 > roadmap was building a validation harness for a product that did
 > not yet exist. The post-pivot roadmap lives in
-> `docs/implementation-roadmap.md` (short milestone list, hook-first).
-> The diagnosis is in `docs/postmortem-eval-overbuild.md`.
+> `docs/dev/implementation-roadmap.md` (short milestone list, hook-first).
+> The diagnosis is in `docs/dev/postmortem-eval-overbuild.md`.
 >
 > Read this section for historical context only. Do not use it to
 > drive forward work, and in particular do not treat Phase 0's
@@ -1176,7 +1176,7 @@ The `<details open>` tag determines which tool is "featured" by default. This sh
 
 **Ship criterion:** the eval suite runs reproducibly on a fresh machine in one command and we have credible numbers for every cell. Bad numbers are publishable; missing numbers are not.
 
-See `docs/phase-0-eval-suite.md` for the full plan, task catalog, and out-of-scope list.
+See `docs/dev/phase-0-eval-suite.md` for the full plan, task catalog, and out-of-scope list.
 
 ### Phase 1 — Public Launch: Scan + Eval (3 weeks)
 
@@ -1194,7 +1194,7 @@ See `docs/phase-0-eval-suite.md` for the full plan, task catalog, and out-of-sco
 
 **Ship criterion:** a developer can run `npx shhh scan .` and see masked output; a skeptic can clone `shhh-eval`, run `make bench`, and reproduce our numbers on their own machine.
 
-See `docs/phase-1-scan-launch.md` for the full plan.
+See `docs/dev/phase-1-scan-launch.md` for the full plan.
 
 ### Phase 2 — Architecture Decision (1 week)
 
@@ -1208,7 +1208,7 @@ See `docs/phase-1-scan-launch.md` for the full plan.
 
 **Deliverable:** an `ARCHITECTURE_DECISIONS.md` document in the repo with numbered ADRs, each citing the eval result that justifies the decision.
 
-See `docs/phase-2-architecture-decision.md`.
+See `docs/dev/phase-2-architecture-decision.md`.
 
 ### Phase 3 — Claude Code Integration (4 weeks)
 
@@ -1225,7 +1225,7 @@ See `docs/phase-2-architecture-decision.md`.
 
 **Ship criterion:** a Claude Code user runs `shhh install claude-code`, restarts, and their `.env` files are redacted on read, Edit/Write is refused with a clear error, and eval task 6 (prompt-injection exfil) shows the real value no longer leaves the machine.
 
-See `docs/phase-3-claude-code.md`.
+See `docs/dev/phase-3-claude-code.md`.
 
 ### Phase 4 — Multi-tool Coverage (4 weeks)
 
@@ -1241,7 +1241,7 @@ See `docs/phase-3-claude-code.md`.
 
 **Ship criterion:** all eval tasks pass (or are explicitly documented as scoped out) for Claude Code via hook, Cursor via MCP, and Aider via proxy. The compatibility matrix in the README is accurate.
 
-See `docs/phase-4-multi-tool.md`.
+See `docs/dev/phase-4-multi-tool.md`.
 
 ### Phase 5 — TUI Installer & Polish (3 weeks)
 
@@ -1258,7 +1258,7 @@ See `docs/phase-4-multi-tool.md`.
 
 **Ship criterion:** a developer runs `npx shhh init`, gets walked through setup, and has full protection in under 90 seconds. `shhh uninstall` returns the system to its pre-shhh state.
 
-See `docs/phase-5-tui-polish.md`.
+See `docs/dev/phase-5-tui-polish.md`.
 
 ### Phase 6 — Growth & Ecosystem (ongoing)
 
@@ -1275,7 +1275,7 @@ See `docs/phase-5-tui-polish.md`.
 - **No LLM-local enrichment in v1 or v2.** The original "local LLM for classification" idea is speculative, expensive, and not validated by any eval task. Shelved until an eval task demonstrates pattern-based labeling is insufficient.
 - **No commercial features that lock the open-source path.** If monetization happens, it is additive (hosted dashboards, team management), not subtractive.
 
-See `docs/phase-6-growth.md`.
+See `docs/dev/phase-6-growth.md`.
 
 ---
 

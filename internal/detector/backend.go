@@ -2,7 +2,7 @@ package detector
 
 // Backend is the minimal contract every detection engine must
 // satisfy. Born from the 2026-05-26 gitleaks spike (see
-// `docs/gitleaks-spike.md`): we wanted to swap detectors behind
+// `docs/dev/gitleaks-spike.md`): we wanted to swap detectors behind
 // an env flag without rewriting every caller.
 //
 // The interface is intentionally tiny — one method, one type. The

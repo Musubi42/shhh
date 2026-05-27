@@ -31,7 +31,7 @@ rule / improved a test / landed a roadmap step,"* today's work was
 scaffolding and the next session needs to correct course. This is not
 a soft guideline. A prior 10-commit streak failed this check and
 produced a working library with no product. A human had to intervene.
-See `docs/postmortem-eval-overbuild.md`.
+See `docs/dev/postmortem-eval-overbuild.md`.
 
 ## Pre-release status
 
@@ -49,7 +49,7 @@ Practical consequences:
   schema-version negotiation for our own config. When the design
   changes, the format changes with it.
 - This is NOT permission to skip testing. Real-shell validation
-  (see `docs/testing-playbook.md`) still applies. "Pre-release"
+  (see `docs/dev/testing-playbook.md`) still applies. "Pre-release"
   means we can change the design, not that we can ship broken
   binaries.
 
@@ -63,7 +63,7 @@ Practical consequences:
    tier system, or a task runner as a first-class concept.
 
 2. **No new phases, tiers, or multi-step internal roadmaps.** The
-   roadmap lives in `docs/implementation-roadmap.md` as a short list
+   roadmap lives in `docs/dev/implementation-roadmap.md` as a short list
    of user-shippable milestones. Do not extend it without a
    corresponding user-visible deliverable. "Foundations" are not
    deliverables.
@@ -104,12 +104,12 @@ Practical consequences:
 
 ## Reading order for a fresh session
 
-1. `docs/postmortem-eval-overbuild.md` — why the prior roadmap got
+1. `docs/dev/postmortem-eval-overbuild.md` — why the prior roadmap got
    scrapped. Skip this once and you will repeat it.
-2. `docs/testing-playbook.md` — how to test changes end-to-end
+2. `docs/dev/testing-playbook.md` — how to test changes end-to-end
    without losing 30 minutes to stale binaries, aliased `cp`, or
    buffered pipes. Read once before your first `make build`.
-3. `docs/implementation-roadmap.md` — the current milestone list.
+3. `docs/dev/implementation-roadmap.md` — the current milestone list.
 4. `PRD.md` §§1, 2, 5, 6, 8 — the product vision. Skip §10 (phases)
    and §11 (open questions) unless doing growth work; both are
    historical.
@@ -123,7 +123,7 @@ Practical consequences:
 
 ## What to treat as history, not as direction
 
-- `docs/implementation-log.md` entries 1–11: they document ~1100
+- `docs/dev/implementation-log.md` entries 1–11: they document ~1100
   lines of eval-harness work. They contain real calibration lessons
   (tokenization, charset-diversity gate, integrity-prefix skip,
   structural URL redaction, the gitleaks transcription decision)

@@ -43,6 +43,9 @@ type hookInput struct {
 	HookEventName  string          `json:"hook_event_name"`
 	ToolName       string          `json:"tool_name"`
 	ToolInput      json.RawMessage `json:"tool_input"`
+	// Prompt is populated on UserPromptSubmit events. Claude Code sends
+	// the user's literal prompt text here, before it reaches the model.
+	Prompt string `json:"prompt"`
 }
 
 // effectiveSessionID returns the agent-appropriate identifier used to
@@ -72,6 +75,10 @@ func runClaudeCode(stdin io.Reader, stdout io.Writer) error {
 	switch in.HookEventName {
 	case "PreToolUse":
 		handlePreToolUse(stdout, &in)
+	case "UserPromptSubmit":
+		handleUserPromptSubmit(stdout, &in)
+	case "SessionStart":
+		handleSessionStart(stdout, &in)
 	case "SessionEnd":
 		_ = WipeSession(in.effectiveSessionID())
 		writeEmpty(stdout)

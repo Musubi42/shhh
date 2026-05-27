@@ -66,7 +66,7 @@ Engines:
 
 	// Same flag-split pattern as cmdaudit/cmdinstall — flags after
 	// positionals were silently swallowed by the stdlib parser
-	// before we added the helper. See docs/testing-playbook.md.
+	// before we added the helper. See docs/dev/testing-playbook.md.
 	flagArgs, paths := splitFlagsAndPositionals(args)
 	if err := fs.Parse(flagArgs); err != nil {
 		return err

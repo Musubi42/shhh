@@ -1,7 +1,7 @@
 // Package cmdignore implements `shhh ignore` — inspect, add to, and
 // query the layered `.shhhignore` rule set. The detector skip-list,
 // nothing to do with the hook bypass (feature B). See
-// docs/engine-architecture.md §2.2 for the distinction.
+// docs/dev/engine-architecture.md §2.2 for the distinction.
 package cmdignore
 
 import (

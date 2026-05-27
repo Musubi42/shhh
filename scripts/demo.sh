@@ -3,7 +3,7 @@
 # make demo: end-to-end smoke test for the Claude Code hook.
 #
 # This does NOT drive a real `claude` binary — that step is manual (see
-# docs/implementation-roadmap.md milestone 1, work item 5). What it does
+# docs/dev/implementation-roadmap.md milestone 1, work item 5). What it does
 # do is simulate Claude Code calling the hook on a Read of a .env file
 # containing a fake Stripe live key, then assert:
 #   1. The hook rewrote tool_input.file_path to a shhh cache location.

@@ -164,7 +164,7 @@ func derivePublicPrefix(match string) string {
 // `.shhhignore` cascade starts from the same lockfile/vendor/
 // binary baseline as gitleaks itself — keeping shhh-native
 // scanning aligned with gitleaks even when gitleaks isn't in the
-// user's engine selection. See docs/engine-architecture.md §2.3.
+// user's engine selection. See docs/dev/engine-architecture.md §2.3.
 //
 // Returns nil + nil if the gitleaks detector fails to construct
 // (rare). Callers should treat that as "no defaults" and continue

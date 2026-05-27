@@ -80,7 +80,7 @@ type jsonAtRisk struct {
 // Result to w. Safe for CI pipelines and pastable into PR comments:
 // contains only placeholders, never raw secret values.
 //
-// The JSON shape is documented in docs/design/cli-output.md under
+// The JSON shape is documented in docs/dev/design/cli-output.md under
 // "JSON output mode".
 func RenderJSON(w io.Writer, r *auditpkg.Result) error {
 	out := jsonResult{

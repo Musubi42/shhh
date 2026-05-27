@@ -332,6 +332,12 @@ func installAgent(agent string, scope Scope, paths []string, engines []string) e
 
 		syncConfigOnInstall(agent, scope, settingsPath, engines)
 
+		if agent == "claude-code" {
+			if _, err := installShhhAllowCommand(settingsPath); err != nil {
+				fmt.Fprintf(os.Stderr, "shhh: warning: could not write /shhh-allow command file: %v\n", err)
+			}
+		}
+
 		if d == "" {
 			fmt.Printf("shhh: already installed in %s (no changes)\n", settingsPath)
 			continue
@@ -391,14 +397,14 @@ func printInstallSummary(agent string, planEngines []string) {
 		fmt.Println("Codex coverage note: shhh intercepts Bash today (cat .env, rg, etc.). Codex's")
 		fmt.Println("apply_patch and read_file tools do not yet fire PreToolUse upstream — track")
 		fmt.Println("https://github.com/openai/codex/issues/18491. Until that ships, in-place edits")
-		fmt.Println("via apply_patch can hand the model a raw secret. See docs/known-limitations.md.")
+		fmt.Println("via apply_patch can hand the model a raw secret. See docs/dev/known-limitations.md.")
 		fmt.Println()
 		fmt.Println("Restart any running `codex` sessions for the hook to take effect.")
 	case "cursor":
 		fmt.Println("Cursor coverage note: shhh wires into Cursor's native hook system (v1.7+).")
 		fmt.Println("Shell + Read are intercepted; the Read→Edit ledger interaction is unverified")
 		fmt.Println("on Cursor — if Edit fails on a redacted file, use Shell (sed/tee/python) as on")
-		fmt.Println("Claude Code. See docs/known-limitations.md §3.")
+		fmt.Println("Claude Code. See docs/dev/known-limitations.md §3.")
 		fmt.Println()
 		fmt.Println("Restart Cursor (close all windows) for the hook to take effect.")
 	default:
@@ -438,6 +444,12 @@ func uninstallAgent(agent string, scope Scope, paths []string) error {
 		d, err := Uninstall(settingsPath, agent)
 		if err != nil {
 			return err
+		}
+
+		if agent == "claude-code" {
+			if _, err := uninstallShhhAllowCommand(settingsPath); err != nil {
+				fmt.Fprintf(os.Stderr, "shhh: warning: could not remove /shhh-allow command file: %v\n", err)
+			}
 		}
 
 		// Always sync our own config.json — the on-disk state needs

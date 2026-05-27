@@ -2,7 +2,7 @@
 
 > **Launching the project?** The mass-adoption path is broken out
 > into six session-ready briefs in
-> [`docs/ready-to-publish/`](docs/ready-to-publish/) — Read→Edit
+> [`docs/dev/ready-to-publish/`](docs/dev/ready-to-publish/) — Read→Edit
 > ledger handling, releases + Homebrew, viral README rewrite,
 > Codex + Cursor support, and the launch post. Each is meant to
 > be handled in one focused session. The items below are the
@@ -23,9 +23,9 @@ for a full day.
 
 **Status update (2026-05-26):** items 1, 2, and 4 are now in a
 landed state. Item 1 (Read→Edit cascade) closed via option D from
-[`docs/ready-to-publish/01-kill-read-edit-ledger-bug.md`](docs/ready-to-publish/01-kill-read-edit-ledger-bug.md):
+[`docs/dev/ready-to-publish/01-kill-read-edit-ledger-bug.md`](docs/dev/ready-to-publish/01-kill-read-edit-ledger-bug.md):
 the limit is honestly documented in `README.md` and
-`docs/known-limitations.md`, and the hook narration already steers
+`docs/dev/known-limitations.md`, and the hook narration already steers
 Claude to `Bash` on redacted files. Item 2 (detection engine
 replacement) shipped as a 4-commit refactor — see the engine
 redesign section below. Item 4 (narration compression) closed as
@@ -38,7 +38,7 @@ bypass still future) and item 5 (cache scoping).
 
 ## Recent progress — engine redesign, 4-commit refactor (2026-05-26)
 
-Closes ROADMAP item #2 in full. Reference: `docs/engine-architecture.md`
+Closes ROADMAP item #2 in full. Reference: `docs/dev/engine-architecture.md`
 and `~/.claude/plans/tu-peux-planifier-le-tender-sloth.md`.
 Commits: `c2b0509` (Phase 1), `88484e2` (Phases 2-4),
 `60ed106` (Phases 5-6), `e118bb6` (post-review fixes).
@@ -121,7 +121,7 @@ shared `.shhhignore` cascade. `shhh ignore check go.sum` reports
 - ROADMAP item #3 (intentional-fixture bypass): the detector
   skip-list half has shipped via `.shhhignore`. The hook bypass
   half (feature B: "let Claude read this file unredacted") is a
-  separate design pass — `docs/engine-architecture.md` §2.2
+  separate design pass — `docs/dev/engine-architecture.md` §2.2
   carves it out explicitly to prevent the two concepts from
   sharing a file or flag.
 
@@ -142,7 +142,7 @@ the migration is data-driven, not vibes-driven).
 
 ### Pluggable detector backends (`SHHH_DETECTOR` env flag)
 
-Spike (`docs/gitleaks-spike.md`) confirmed gitleaks-as-library
+Spike (`docs/dev/gitleaks-spike.md`) confirmed gitleaks-as-library
 is viable: 222 rules vs our ~30, MIT, clean Go API, +30ms perf,
 +8 MB binary. Step 1 of the 4-step migration shipped in the
 same session:
@@ -248,7 +248,7 @@ runnable on demand without waiting for organic usage.
 ## Recent progress — dryrun follow-up (2026-05-26)
 
 Self-dogfood dryrun while still in the build session. Logged in
-`docs/dryrun-2026-05-26.md`. Two CRITICAL bugs caught that all unit
+`docs/dev/dryrun-2026-05-26.md`. Two CRITICAL bugs caught that all unit
 tests had missed:
 
 - **CLI flag-after-positional silently dropped.** `shhh audit .
@@ -306,7 +306,7 @@ is dominated by per-project session scanning, so the savings are
 `ScopePaths` work. The testing-playbook reminds new agents to run
 the scoped form by default.
 
-**Doc landed:** `docs/testing-playbook.md` (referenced from
+**Doc landed:** `docs/dev/testing-playbook.md` (referenced from
 `CLAUDE.md` reading order at step 2). Captures the dryrun's
 operational lessons — stale binary detection, aliased `cp`/`rm`,
 pipe-buffering with `head`, hook activation requiring session
@@ -319,7 +319,7 @@ touching the CLI surface.
 ## Recent progress — per-project install + diff renderer (2026-05-26)
 
 Follow-up on the 2026-05-25 per-project MVP. All shipped, all on
-`main`, `make test` green. See `docs/per-project-install-kickoff.md`
+`main`, `make test` green. See `docs/dev/per-project-install-kickoff.md`
 for the original design context.
 
 **CLI shape — positional paths**
@@ -397,8 +397,8 @@ for the original design context.
 
 Big session of forensic-audit work, driven by the v0.1 release
 dry-run. All shipped, all on `main`, `make test` green. See
-`docs/audit-api.md` for the full agent-facing reference and
-`docs/release-dryrun.md` for what triggered each change.
+`docs/dev/audit-api.md` for the full agent-facing reference and
+`docs/dev/release-dryrun.md` for what triggered each change.
 
 **Bug fixes**
 - `[PROTECTED ✓]` was lying when `~/.shhh/config.json::installed_paths` drifted from the actual `settings.json` state. Fixed by (a) `shhh uninstall` now updates config.json, (b) the audit defensively re-reads each referenced settings.json and only trusts it if `shhh hook` is genuinely present (`internal/audit/run.go::settingsHasShhhHook`).
@@ -428,7 +428,7 @@ dry-run. All shipped, all on `main`, `make test` green. See
 
 **Per-project install — MVP shipped**
 - `shhh install claude-code --scope project [--cwd <path>]` and matching uninstall, plus `.claude/` dir auto-creation on missing. Config `scope` re-derived from `installed_paths` on every load.
-- Pending follow-ups documented in `docs/per-project-install-kickoff.md`: interactive picker enhancement, per-project HTML mini-CTA, global-with-local-override edge case, automated test coverage.
+- Pending follow-ups documented in `docs/dev/per-project-install-kickoff.md`: interactive picker enhancement, per-project HTML mini-CTA, global-with-local-override edge case, automated test coverage.
 
 ---
 
@@ -439,11 +439,11 @@ strategies for an actual fix (Strategy A: replace tool result in
 `PostToolUse/Read`; Strategy B: synthetic result from
 `PreToolUse/Read`; Strategy C: inject ledger state from a hook)
 were all ruled out as impossible against the current Claude Code
-hook API. See [`docs/design/read-edit-tracking.md`](docs/design/read-edit-tracking.md)
+hook API. See [`docs/dev/design/read-edit-tracking.md`](docs/dev/design/read-edit-tracking.md)
 for the permanent record.
 
 The shipped resolution is option D from
-[`docs/ready-to-publish/01-kill-read-edit-ledger-bug.md`](docs/ready-to-publish/01-kill-read-edit-ledger-bug.md):
+[`docs/dev/ready-to-publish/01-kill-read-edit-ledger-bug.md`](docs/dev/ready-to-publish/01-kill-read-edit-ledger-bug.md):
 honest public documentation of the limit. Concretely:
 
 - `cmd/shhh/cmdhook/read.go::narrateRedactions` already tells
@@ -453,7 +453,7 @@ honest public documentation of the limit. Concretely:
   on its first try.
 - `README.md` now has a top-level "Known limitations" section
   setting first-time-user expectations before the surprise.
-- [`docs/known-limitations.md`](docs/known-limitations.md) is the
+- [`docs/dev/known-limitations.md`](docs/dev/known-limitations.md) is the
   user-facing full repro + the strategies considered, linked from
   the README.
 - A GitHub tracking issue captures the affected `claude --version`
@@ -503,7 +503,7 @@ upstream and put our effort on the hook surface (narration, session
 map, ledger behavior) rather than on re-inventing gitleaks.
 
 **Why the existing "transcribe gitleaks by hand" decision is stale:**
-see `docs/implementation-log.md` Entry 10. That call was made when
+see `docs/dev/implementation-log.md` Entry 10. That call was made when
 the eval harness was framed as the product. Now the hook is the
 product, and the tradeoff flips — adding a dependency is cheaper
 than carrying the maintenance cost of a bespoke detector that keeps
@@ -525,7 +525,7 @@ producing friction on its own dogfood.
 >   1. `CLAUDE.md` — especially rule 4 (elaboration bias) and rule 6
 >      (no speculative work from PRD claims).
 >   2. `ROADMAP.md` item 2 — this entry.
->   3. `docs/implementation-log.md` Entry 10 — the "transcribe
+>   3. `docs/dev/implementation-log.md` Entry 10 — the "transcribe
 >      gitleaks manually" decision. Understand why it was made so
 >      you can understand why it's being reversed.
 >   4. `internal/detector/detector.go`, `internal/rules/rules.go`,
@@ -563,7 +563,7 @@ producing friction on its own dogfood.
 
 ## 3. Allowlist / bypass affordance for intentional fixture content
 
-**Status: HALF SHIPPED 2026-05-26 — see `docs/engine-architecture.md` §2.2.**
+**Status: HALF SHIPPED 2026-05-26 — see `docs/dev/engine-architecture.md` §2.2.**
 
 The redesign explicitly split this item into two distinct
 features that must not share a file, a flag, or a syntax:
@@ -621,7 +621,7 @@ developer to say "I know, this is fine."
 >      prefix, executable path, etc.) or nothing at all for v1.
 >
 > Step 1 (design, don't code): write a short proposal in
->    `docs/design/allowlist.md` covering:
+>    `docs/dev/design/allowlist.md` covering:
 >    - which shape(s) to implement and why
 >    - precedence rules (in-file vs config vs auto)
 >    - how the user discovers an allowlist-triggered skip (narration

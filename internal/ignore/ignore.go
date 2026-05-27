@@ -5,7 +5,7 @@
 // last-decision-wins semantics, so a project-level `!go.sum`
 // can re-include a path that gitleaks would otherwise allowlist.
 //
-// Out of scope here (feature B in docs/engine-architecture.md):
+// Out of scope here (feature B in docs/dev/engine-architecture.md):
 // the hook bypass file. This package only governs which paths
 // the *detector* scans. The hook always redacts what it gets.
 package ignore

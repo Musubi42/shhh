@@ -8,7 +8,7 @@ import (
 // runCodex is the entry point for `shhh hook codex`.
 //
 // The Codex CLI hook payload is the same shape as Claude Code's (per
-// docs/codex-research-2026-05-26.md): `session_id`, `tool_name`,
+// docs/dev/codex-research-2026-05-26.md): `session_id`, `tool_name`,
 // `tool_input`, `hook_event_name`, plus Codex-only fields like
 // `turn_id` and `permission_mode` that we don't need and ignore.
 // The response envelope is also identical
@@ -28,7 +28,7 @@ import (
 //     in https://github.com/openai/codex/issues/18491 but not yet
 //     shipped. Until upstream fixes that, in-place edits via
 //     apply_patch can hand the model a raw secret before shhh sees
-//     it. README and docs/known-limitations.md document this gap.
+//     it. README and docs/dev/known-limitations.md document this gap.
 //     When upstream ships the fix, the v1 hook auto-improves —
 //     handleBash already redacts on Bash, but new tool dispatches
 //     here will need new handlers.

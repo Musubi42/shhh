@@ -1,5 +1,5 @@
 // Command shhh is the CLI. v0.1 (milestone 1) ships scan, redact, hook,
-// install, and uninstall. See docs/implementation-roadmap.md.
+// install, and uninstall. See docs/dev/implementation-roadmap.md.
 package main
 
 import (
@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/Musubi42/shhh/cmd/shhh/cmdallow"
 	"github.com/Musubi42/shhh/cmd/shhh/cmdaudit"
 	"github.com/Musubi42/shhh/cmd/shhh/cmdbench"
 	"github.com/Musubi42/shhh/cmd/shhh/cmddoctor"
@@ -72,6 +73,8 @@ func main() {
 		err = cmdbench.Run(os.Args[2:])
 	case "ignore":
 		err = cmdignore.Run(os.Args[2:])
+	case "allow":
+		err = cmdallow.Run(os.Args[2:])
 	case "licenses":
 		err = cmdlicenses.Run(os.Args[2:])
 	case "version", "--version", "-v":
@@ -135,6 +138,11 @@ Usage:
   shhh ignore add <pattern>           Append a rule (default: project)
     --global                            Append to ~/.shhh/.shhhignore instead
   shhh ignore check <path>            Show which layer decides a path
+
+  shhh allow                          Allow a placeholder name for the current Claude Code session
+    --session-id <id>                  Session to scope under (defaults to $SHHH_SESSION_ID)
+    --add NAME                         Placeholder name to allow (e.g. STRIPE_LIVE_KEY)
+    --list                             List currently-allowed names
 
   shhh licenses                       Print shhh + third-party MIT notices
 

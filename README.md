@@ -114,7 +114,7 @@ upstream (track
 [openai/codex#18491](https://github.com/openai/codex/issues/18491)).
 Until that lands, in-place edits via `apply_patch` can hand the
 model a raw secret. Full repro:
-[`docs/known-limitations.md`](docs/known-limitations.md) §2.
+[`docs/dev/known-limitations.md`](docs/dev/known-limitations.md) §2.
 
 **Cursor IDE** support also ships (Cursor v1.7+ native hooks):
 
@@ -126,7 +126,7 @@ Both `Shell` and `Read` are intercepted via `preToolUse`. The
 Read→Edit ledger interaction is unverified on Cursor at the
 protocol level — if `Edit` fails on a redacted file, fall back
 to `Shell` (sed/tee/python) as on Claude Code. Full repro:
-[`docs/known-limitations.md`](docs/known-limitations.md) §3.
+[`docs/dev/known-limitations.md`](docs/dev/known-limitations.md) §3.
 
 ---
 
@@ -178,7 +178,7 @@ After shhh redacts a file, Claude Code's `Edit` and `Write`
 tools fail on that file for the rest of the session with `File
 has not been read yet`. This is a limitation of the Claude Code
 hook API, not a bug in shhh — see
-[`docs/design/read-edit-tracking.md`](docs/design/read-edit-tracking.md)
+[`docs/dev/design/read-edit-tracking.md`](docs/dev/design/read-edit-tracking.md)
 for the three hook-API strategies that were evaluated and ruled
 out.
 
@@ -187,7 +187,7 @@ out.
 just redacted. In practice Claude reaches for `Bash` directly
 and you never see the `Edit` failure. Bash output is also
 redacted, so this stays safe. Full repro:
-[`docs/known-limitations.md`](docs/known-limitations.md).
+[`docs/dev/known-limitations.md`](docs/dev/known-limitations.md).
 
 ---
 
@@ -235,7 +235,7 @@ Guides:
 - [`CLAUDE.md`](CLAUDE.md) — operating instructions for any AI
   agent (and humans) working in this repo.
 - [`PRD.md`](PRD.md) §§1, 2, 5, 6, 8 — the product vision.
-- [`docs/engine-architecture.md`](docs/engine-architecture.md) —
+- [`docs/dev/engine-architecture.md`](docs/dev/engine-architecture.md) —
   the gitleaks + shhh-native + `.shhhignore` design.
 - [`ROADMAP.md`](ROADMAP.md) — current friction items from
   dogfooding.

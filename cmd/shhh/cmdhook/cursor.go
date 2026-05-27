@@ -46,7 +46,7 @@ import (
 //     Bash when Edit fails goes in `agent_message` (Cursor's
 //     equivalent of `additionalContext`). Whether Cursor has the
 //     same Read→Edit ledger limitation as Claude Code (see
-//     docs/known-limitations.md §1) is unverified at the protocol
+//     docs/dev/known-limitations.md §1) is unverified at the protocol
 //     level — first user run will tell us. Until then, shipping
 //     the narration is safe: if Edit works on Cursor it just
 //     ignores the note; if Edit fails the user has the right
@@ -113,7 +113,7 @@ func handleCursorPreToolUse(stdout io.Writer, in *hookInput) {
 // cursorResponse is the flat snake_case response envelope Cursor's
 // hook protocol expects. All fields are omitempty so we can emit
 // minimal JSON when only `permission` and one of the optional
-// fields are needed. See docs/cursor-research-2026-05-27.md for
+// fields are needed. See docs/dev/cursor-research-2026-05-27.md for
 // the verbatim spec.
 type cursorResponse struct {
 	Permission   string          `json:"permission,omitempty"`

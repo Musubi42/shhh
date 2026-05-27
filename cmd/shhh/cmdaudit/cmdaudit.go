@@ -4,9 +4,9 @@
 // ephemeral report server.
 //
 // The design decisions behind this command live in
-// docs/design/implementation-plan.md. The visual reference is
-// docs/design/mockups/. The terminal output format is
-// docs/design/cli-output.md.
+// docs/dev/design/implementation-plan.md. The visual reference is
+// docs/dev/design/mockups/. The terminal output format is
+// docs/dev/design/cli-output.md.
 package cmdaudit
 
 import (

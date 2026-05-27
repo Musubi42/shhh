@@ -9,7 +9,7 @@ import (
 // under hooks.<event>[] has command/matcher/timeout directly, with
 // no inner `hooks: [{type, command}]` array. Confirmed from
 // developers.cursor.com/docs/hooks and reflected in
-// docs/cursor-research-2026-05-27.md.
+// docs/dev/cursor-research-2026-05-27.md.
 //
 // Example we write:
 //

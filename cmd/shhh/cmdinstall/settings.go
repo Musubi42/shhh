@@ -63,6 +63,8 @@ func managedFor(agent string) []managedHook {
 		return []managedHook{
 			{"PreToolUse", "Read"},
 			{"PreToolUse", "Bash"},
+			{"UserPromptSubmit", ""},
+			{"SessionStart", ""},
 			{"SessionEnd", ""},
 		}
 	}

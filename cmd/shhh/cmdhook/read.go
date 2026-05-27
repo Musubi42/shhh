@@ -181,7 +181,7 @@ func handleRead(stdout io.Writer, in *hookInput) {
 //     using natural language rather than the raw placeholder tokens.
 //  3. Warn Claude that the Edit tool will fail on this file for the rest
 //     of the session, and point it at Bash as the working alternative.
-//     See docs/design/read-edit-tracking.md for why this is necessary —
+//     See docs/dev/design/read-edit-tracking.md for why this is necessary —
 //     Claude Code's Read-ledger records the cache path, not the original.
 //
 // The note is intentionally brief and framed as instructions to Claude,
